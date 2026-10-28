@@ -10,6 +10,8 @@ import { listDossiers, type DossierListItem } from "@/lib/data/dossier-repositor
 import { formatCOP, formatDate } from "@/lib/finance/format";
 import type { DossierStatus } from "@/lib/finance/types";
 import { getSupabase } from "@/lib/supabase/client";
+import { AccountingExport } from "./AccountingExport";
+import { AlertBoard } from "./AlertBoard";
 import { NewDossierForm } from "./NewDossierForm";
 
 const STATUS: Record<DossierStatus, { label: string; className: string }> = {
@@ -78,6 +80,8 @@ export function DossierHome() {
         </div>
       </header>
 
+      <AlertBoard />
+
       {creating && (
         <div className="mb-6">
           <NewDossierForm onCreated={(id) => router.push(expedienteHref(id))} onCancel={() => setCreating(false)} />
@@ -102,6 +106,12 @@ export function DossierHome() {
           >
             <Plus className="size-4" aria-hidden /> Crear el primero
           </button>
+        </div>
+      )}
+
+      {items && items.length > 0 && profile.role === "ADMIN" && (
+        <div className="mb-3 flex justify-end">
+          <AccountingExport />
         </div>
       )}
 

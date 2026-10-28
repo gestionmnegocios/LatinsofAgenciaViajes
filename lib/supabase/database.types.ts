@@ -506,6 +506,20 @@ export type Database = {
         Returns: string
       }
       current_agency_id: { Args: never; Returns: string }
+      dashboard_alerts: {
+        Args: never
+        Returns: {
+          amount: number | null
+          client_name: string
+          detail: string | null
+          dossier_code: string
+          dossier_id: string
+          due_at: string | null
+          kind: string
+          pax: number
+          title: string
+        }[]
+      }
       is_agency_admin: { Args: never; Returns: boolean }
       liquidate_dossier: {
         Args: { p_dossier_id: string }

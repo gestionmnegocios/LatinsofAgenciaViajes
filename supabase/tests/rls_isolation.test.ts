@@ -496,3 +496,52 @@ describe("RPC de aplicación", () => {
     assert.equal(rows[0].agency_id, B.agency);
   });
 });
+
+describe("Semáforo del tablero (dashboard_alerts)", () => {
+  const D = {
+    soon: "aaaaaaaa-0000-4000-8000-0000000001d1",
+    later: "aaaaaaaa-0000-4000-8000-0000000001d2",
+    optSoon: "aaaaaaaa-0000-4000-8000-0000000001e1",
+    optLater: "aaaaaaaa-0000-4000-8000-0000000001e2",
+    bDossier: "bbbbbbbb-0000-4000-8000-0000000001d1",
+    bOption: "bbbbbbbb-0000-4000-8000-0000000001e1",
+  };
+
+  before(async () => {
+    // Como superusuario: expedientes ya confirmados con fechas relativas a hoy.
+    await db.exec(`
+      insert into public.travel_dossiers
+        (id, agency_id, agent_id, client_id, dossier_code, destination_title, departure_date, return_date, status, adults_count, children_count) values
+        ('${D.soon}',     '${A.agency}', '${A.agent}', '${A.client}', 'EXP-2001', 'Santa Marta', current_date + 1,  current_date + 5,  'CONFIRMED', 2, 1),
+        ('${D.later}',    '${A.agency}', '${A.agent}', '${A.client}', 'EXP-2002', 'Madrid',      current_date + 60, current_date + 70, 'CONFIRMED', 2, 0),
+        ('${D.bDossier}', '${B.agency}', '${B.admin}', '${B.client}', 'EXP-0002', 'Lima',        current_date + 1,  current_date + 3,  'CONFIRMED', 1, 0);
+      insert into public.quote_options (id, agency_id, dossier_id, option_title, is_selected) values
+        ('${D.optSoon}',  '${A.agency}', '${D.soon}',     'Opción 1', true),
+        ('${D.optLater}', '${A.agency}', '${D.later}',    'Opción 1', true),
+        ('${D.bOption}',  '${B.agency}', '${D.bDossier}', 'Opción 1', true);
+      insert into public.dossier_services
+        (agency_id, quote_option_id, provider_name, service_type, net_cost_original, sale_price, payment_deadline, is_provider_paid) values
+        ('${A.agency}', '${D.optSoon}',  'Mayorplus', 'PACKAGE', 2000000, 2500000, now() + interval '10 hours', false),
+        ('${A.agency}', '${D.optSoon}',  'Decameron', 'HOTEL',   1000000, 1200000, now() - interval '2 hours',  true),
+        ('${A.agency}', '${D.optLater}', 'Iberia',    'FLIGHT',  3000000, 3500000, now() + interval '30 days',  false),
+        ('${B.agency}', '${D.bOption}',  'Otro',      'HOTEL',   500000,  700000,  now() + interval '1 hour',   false);
+      insert into public.client_payments (agency_id, dossier_id, amount, payment_method) values
+        ('${A.agency}', '${D.soon}', 1000000, 'CASH');
+    `);
+  });
+
+  test("clasifica proveedor ≤24h, saldo de la semana y salidas ≤48h solo de la propia agencia", async () => {
+    await asUser(A.agent, async () => {
+      const { rows } = await db.query<{ kind: string; dossier_code: string; amount: string | null; pax: number; detail: string | null }>(
+        `select kind, dossier_code, amount, pax, detail from public.dashboard_alerts()`,
+      );
+      const by = (k: string) => rows.filter((r) => r.kind === k);
+
+      assert.deepEqual(by("PROVIDER_DUE").map((r) => [r.dossier_code, r.detail, Number(r.amount)]), [["EXP-2001", "Mayorplus", 2_000_000]]);
+      // Venta 3,7 M − abono 1 M; Madrid (sale en 60 días) no entra.
+      assert.deepEqual(by("CLIENT_DUE").map((r) => [r.dossier_code, Number(r.amount)]), [["EXP-2001", 2_700_000]]);
+      assert.deepEqual(by("DEPARTURE").map((r) => [r.dossier_code, r.pax]), [["EXP-2001", 3]]);
+      assert.ok(rows.every((r) => r.dossier_code !== "EXP-0002"));
+    });
+  });
+});

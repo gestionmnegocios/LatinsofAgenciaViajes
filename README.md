@@ -51,7 +51,7 @@ URL y la llave publicable; usa `.env.example` como plantilla.
 
 | Ruta | Qué muestra |
 | --- | --- |
-| `/` | Login → registro de agencia (primer usuario = ADMIN) → listado de expedientes + Apertura Flash |
+| `/` | Login → registro de agencia (primer usuario = ADMIN) → semáforo (FR-1.1), listado de expedientes, Apertura Flash y exportación CSV contable del mes (FR-5.2, solo ADMIN) |
 | `/expediente?id=…` | Workspace conectado: autoguardado (~0,7 s), confirmar y liquidar vía RPC |
 | `/comisiones` | Corte de comisiones (FR-4.4): por pagar / retenidas / pagadas, agrupadas por asesor; pago en lote y cuenta de cobro imprimible a PDF. El asesor ve solo las suyas |
 | `/demo` | El mismo Workspace con datos en memoria, sin backend |
@@ -61,7 +61,17 @@ RPC de aplicación (`20261028000100_app_rpcs.sql`): `register_agency`,
 (guarda opciones y servicios en una transacción). `convert_quote_to_file` y
 `liquidate_dossier` recalculan las cifras en el servidor. `settle_commissions`
 (`20261028000300_commission_settlement.sql`) pasa en lote comisiones RELEASED a
-PAID con un mismo `settlement_batch_id`; solo ADMIN.
+PAID con un mismo `settlement_batch_id`; solo ADMIN. `dashboard_alerts`
+(`20261028000400_dashboard_alerts.sql`) alimenta el semáforo en hora de Colombia:
+🔴 proveedores sin pagar con time-limit vencido o ≤ 24 h, 🟡 saldo del cliente con
+vencimiento esta semana (próximo time-limit o salida), 🟢 salidas en ≤ 48 h.
+
+### Exportación contable (`lib/accounting/export.ts`)
+
+Un comprobante cuadrado por expediente liquidado, en pesos enteros, CSV con `;`
+y BOM: 111005 (recaudo) contra 281505 por proveedor, 2408 (IVA), 4155 (base,
+absorbe el redondeo) y 520518 / 233520 (comisión). Ajustar `ACCOUNTS` al plan de
+cuentas auxiliar de la agencia en Siigo o Alegra.
 
 Tras cambiar el esquema: aplicar la migración, regenerar
 `lib/supabase/database.types.ts` y correr `npm run test:rls`.
