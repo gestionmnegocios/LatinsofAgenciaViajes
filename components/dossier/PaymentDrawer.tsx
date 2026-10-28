@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
-import { MessageCircle, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
+import { FileText, MessageCircle, Trash2, X } from "lucide-react";
 
 import { round2 } from "@/lib/finance/calculations";
 import { formatCOP, formatDate } from "@/lib/finance/format";
 import type { ClientPayment, Dossier, FinancialSummary, PaymentMethod } from "@/lib/finance/types";
 import { buildReceiptMessage, buildWhatsappLink, PAYMENT_METHOD_LABELS } from "@/lib/whatsapp";
 import { MoneyInput } from "./MoneyInput";
+import { PaymentReceipt, type ReceiptToPrint } from "./PaymentReceipt";
 
 interface PaymentDrawerProps {
   open: boolean;
@@ -39,6 +40,8 @@ export function PaymentDrawer({ open, onClose, dossier, summary, onAddPayment, o
   const [lastPaymentId, setLastPaymentId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [printing, setPrinting] = useState<ReceiptToPrint | null>(null);
+  const stopPrinting = useCallback(() => setPrinting(null), []);
 
   const readOnly = dossier.status === "LIQUIDATED" || dossier.status === "CANCELLED";
   const exceedsBalance = amount > summary.balanceDue;
@@ -75,7 +78,11 @@ export function PaymentDrawer({ open, onClose, dossier, summary, onAddPayment, o
         },
         balanceDueDate: balanceDueDate || null,
       });
-      return { payment, link: buildWhatsappLink(message, dossier.client.whatsapp) };
+      return {
+        payment,
+        link: buildWhatsappLink(message, dossier.client.whatsapp),
+        printable: { payment, totalSale: summary.totalSale, totalPaid: cumulative, balanceDue },
+      };
     });
   }, [dossier, summary.totalSale, balanceDueDate]);
 
@@ -273,7 +280,7 @@ export function PaymentDrawer({ open, onClose, dossier, summary, onAddPayment, o
               </p>
             ) : (
               <ul className="space-y-2">
-                {receipts.map(({ payment, link }) => (
+                {receipts.map(({ payment, link, printable }) => (
                   <li
                     key={payment.id}
                     className={`rounded-lg border px-3 py-2.5 ${
@@ -307,6 +314,13 @@ export function PaymentDrawer({ open, onClose, dossier, summary, onAddPayment, o
                     >
                       <MessageCircle className="size-3.5" aria-hidden /> Enviar recibo por WhatsApp
                     </a>
+                    <button
+                      type="button"
+                      onClick={() => setPrinting(printable)}
+                      className="ml-2 mt-2 inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+                    >
+                      <FileText className="size-3.5" aria-hidden /> Recibo PDF
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -314,6 +328,7 @@ export function PaymentDrawer({ open, onClose, dossier, summary, onAddPayment, o
           </section>
         </div>
       </section>
+      <PaymentReceipt dossier={dossier} receipt={printing} onDone={stopPrinting} />
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { Loader2 } from "lucide-react";
 
 import { getSupabase } from "@/lib/supabase/client";
 import { LoginForm } from "./LoginForm";
-import { RegisterAgencyForm } from "./RegisterAgencyForm";
+import { OnboardingStep } from "./OnboardingStep";
 
 export interface AgencyProfile {
   userId: string;
@@ -117,7 +117,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     case "no-agency":
       return (
         <CenteredCard>
-          <RegisterAgencyForm email={state.user.email ?? ""} onRegistered={() => void refresh(state.user)} />
+          <OnboardingStep email={state.user.email ?? ""} onJoined={() => void refresh(state.user)} />
         </CenteredCard>
       );
     case "ready":

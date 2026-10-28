@@ -14,3 +14,13 @@ body {
   background: var(--color-slate-50);
   color: var(--color-slate-900);
 }
+
+/* Recibo de abono: al imprimir solo se muestra el portal #print-root. */
+@media print {
+  body.print-receipt > *:not(#print-root) {
+    display: none !important;
+  }
+  body.print-receipt {
+    background: white;
+  }
+}

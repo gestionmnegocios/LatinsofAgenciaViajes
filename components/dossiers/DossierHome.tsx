@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { HandCoins, LogOut, Plus } from "lucide-react";
+import { HandCoins, LogOut, Plus, Users } from "lucide-react";
 
 import { useProfile } from "@/components/auth/AuthGate";
 import { listDossiers, type DossierListItem } from "@/lib/data/dossier-repository";
@@ -51,7 +51,7 @@ export function DossierHome() {
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{profile.agencyName}</p>
           <h1 className="text-2xl font-semibold text-slate-900">Expedientes</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="hidden text-sm text-slate-600 sm:inline">
             {profile.fullName} · {profile.role === "ADMIN" ? "Administrador" : "Asesor"}
           </span>
@@ -60,6 +60,12 @@ export function DossierHome() {
             className="inline-flex items-center gap-1 rounded-md px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-100"
           >
             <HandCoins className="size-4" aria-hidden /> Comisiones
+          </Link>
+          <Link
+            href="/equipo"
+            className="inline-flex items-center gap-1 rounded-md px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-100"
+          >
+            <Users className="size-4" aria-hidden /> Equipo
           </Link>
           <button
             type="button"

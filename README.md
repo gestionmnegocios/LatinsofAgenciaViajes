@@ -54,6 +54,7 @@ URL y la llave publicable; usa `.env.example` como plantilla.
 | `/` | Login → registro de agencia (primer usuario = ADMIN) → semáforo (FR-1.1), listado de expedientes, Apertura Flash y exportación CSV contable del mes (FR-5.2, solo ADMIN) |
 | `/expediente?id=…` | Workspace conectado: autoguardado (~0,7 s), confirmar y liquidar vía RPC |
 | `/comisiones` | Corte de comisiones (FR-4.4): por pagar / retenidas / pagadas, agrupadas por asesor; pago en lote y cuenta de cobro imprimible a PDF. El asesor ve solo las suyas |
+| `/equipo` | Asesores: rol, tasa de comisión y activo/inactivo; invitaciones por correo (edición solo ADMIN) |
 | `/demo` | El mismo Workspace con datos en memoria, sin backend |
 
 RPC de aplicación (`20261028000100_app_rpcs.sql`): `register_agency`,
@@ -65,6 +66,16 @@ PAID con un mismo `settlement_batch_id`; solo ADMIN. `dashboard_alerts`
 (`20261028000400_dashboard_alerts.sql`) alimenta el semáforo en hora de Colombia:
 🔴 proveedores sin pagar con time-limit vencido o ≤ 24 h, 🟡 saldo del cliente con
 vencimiento esta semana (próximo time-limit o salida), 🟢 salidas en ≤ 48 h.
+
+### Equipo e invitaciones (`20261028000500_team.sql`)
+
+Sin service role: el ADMIN crea una invitación (correo, rol, %); la persona crea
+su cuenta con ese correo, lo confirma y al ingresar `my_onboarding` le muestra la
+invitación, que acepta con `accept_invitation`. Un trigger impide dejar la
+agencia sin un ADMIN activo o mover usuarios de agencia; un usuario desactivado
+pierde el acceso por RLS y ve un aviso.
+
+Los abonos tienen recibo de caja imprimible a PDF desde el panel de abonos.
 
 ### Exportación contable (`lib/accounting/export.ts`)
 

@@ -27,7 +27,7 @@ const SUPABASE_STUB = `
   create role anon nologin;
   create role authenticated nologin;
   create schema auth;
-  create table auth.users (id uuid primary key, email text);
+  create table auth.users (id uuid primary key, email text, email_confirmed_at timestamptz);
   create function auth.uid() returns uuid language sql stable as $$
     select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
   $$;
@@ -542,6 +542,76 @@ describe("Semáforo del tablero (dashboard_alerts)", () => {
       assert.deepEqual(by("CLIENT_DUE").map((r) => [r.dossier_code, Number(r.amount)]), [["EXP-2001", 2_700_000]]);
       assert.deepEqual(by("DEPARTURE").map((r) => [r.dossier_code, r.pax]), [["EXP-2001", 3]]);
       assert.ok(rows.every((r) => r.dossier_code !== "EXP-0002"));
+    });
+  });
+});
+
+describe("Equipo: invitaciones y gestión de asesores", () => {
+  const INVITEE = "aaaaaaaa-0000-4000-8000-0000000002a1";
+
+  test("invitar, aceptar con correo confirmado, desactivar y conservar un ADMIN", async () => {
+    await db.exec(`insert into auth.users (id, email) values ('${INVITEE}', 'Nueva.Asesora@agencia-a.co');`);
+
+    // Solo el ADMIN invita, y solo a su agencia.
+    const invite = `insert into public.agency_invitations (agency_id, email, full_name, role, commission_rate, invited_by)
+                    values ($1, 'nueva.asesora@agencia-a.co', 'Nueva Asesora', 'AGENT', 12, $2) returning id`;
+    await asUser(A.agent, async () => {
+      await assert.rejects(db.query(invite, [A.agency, A.agent]), /row-level security/);
+    });
+    await asUser(B.admin, async () => {
+      await assert.rejects(db.query(invite, [A.agency, B.admin]), /row-level security/);
+    });
+    const invitationId = await asUser(A.admin, async () => (await db.query<{ id: string }>(invite, [A.agency, A.admin])).rows[0].id);
+    await asUser(B.admin, async () => {
+      assert.equal(await count(`select 1 from public.agency_invitations`), 0);
+    });
+
+    // Sin correo confirmado no ve ni acepta la invitación.
+    await asUser(INVITEE, async () => {
+      assert.equal(await count(`select 1 from public.my_onboarding()`), 0);
+      await assert.rejects(db.query(`select public.accept_invitation($1)`, [invitationId]), /no encontrada/);
+    });
+    await db.exec(`update auth.users set email_confirmed_at = now() where id = '${INVITEE}';`);
+
+    await asUser(INVITEE, async () => {
+      const { rows } = await db.query<{ kind: string; agency_name: string; commission_rate: string }>(
+        `select kind, agency_name, commission_rate from public.my_onboarding()`,
+      );
+      assert.deepEqual(rows.map((r) => [r.kind, r.agency_name, Number(r.commission_rate)]), [["INVITATION", "Agencia A", 12]]);
+      await db.query(`select public.accept_invitation($1)`, [invitationId]);
+      await assert.rejects(db.query(`select public.accept_invitation($1)`, [invitationId]), /ya pertenece/);
+      const me = await db.query<{ role: string; default_commission_rate: string }>(
+        `select role, default_commission_rate from public.agency_users where id = $1`,
+        [INVITEE],
+      );
+      assert.equal(me.rows[0].role, "AGENT");
+      assert.equal(Number(me.rows[0].default_commission_rate), 12);
+    });
+
+    await asUser(A.admin, async () => {
+      // El asesor no puede ajustar su propia tasa; el ADMIN sí.
+      await db.query(`update public.agency_users set default_commission_rate = 18, is_active = false where id = $1`, [INVITEE]);
+      // Mover a otra agencia o dejarla sin ADMIN activo: rechazado.
+      await assert.rejects(db.query(`update public.agency_users set agency_id = $1 where id = $2`, [B.agency, A.agent]));
+      await assert.rejects(
+        db.query(`update public.agency_users set role = 'AGENT' where id = $1`, [A.admin]),
+        /administrador activo/,
+      );
+    });
+    await asUser(A.agent, async () => {
+      const r = await db.query(`update public.agency_users set default_commission_rate = 50 where id = $1`, [A.agent]);
+      assert.equal(r.affectedRows, 0);
+    });
+    await asUser(B.admin, async () => {
+      const r = await db.query(`update public.agency_users set is_active = false where id = $1`, [A.agent]);
+      assert.equal(r.affectedRows, 0);
+    });
+
+    // El desactivado pierde acceso y lo sabe.
+    await asUser(INVITEE, async () => {
+      assert.equal(await count(`select 1 from public.travel_dossiers`), 0);
+      const { rows } = await db.query<{ kind: string }>(`select kind from public.my_onboarding()`);
+      assert.deepEqual(rows.map((r) => r.kind), ["INACTIVE"]);
     });
   });
 });

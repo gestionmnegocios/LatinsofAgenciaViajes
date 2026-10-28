@@ -68,6 +68,42 @@ export type Database = {
         }
         Relationships: []
       }
+      agency_invitations: {
+        Row: {
+          accepted_at: string | null
+          agency_id: string
+          commission_rate: number
+          created_at: string
+          email: string
+          full_name: string
+          id: string
+          invited_by: string
+          role: Database["public"]["Enums"]["user_role"]
+        }
+        Insert: {
+          accepted_at?: string | null
+          agency_id: string
+          commission_rate?: number
+          created_at?: string
+          email: string
+          full_name: string
+          id?: string
+          invited_by: string
+          role?: Database["public"]["Enums"]["user_role"]
+        }
+        Update: {
+          accepted_at?: string | null
+          agency_id?: string
+          commission_rate?: number
+          created_at?: string
+          email?: string
+          full_name?: string
+          id?: string
+          invited_by?: string
+          role?: Database["public"]["Enums"]["user_role"]
+        }
+        Relationships: []
+      }
       agency_users: {
         Row: {
           agency_id: string
@@ -469,6 +505,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_invitation: { Args: { p_invitation_id: string }; Returns: string }
       compute_dossier_financials: {
         Args: { p_dossier_id: string }
         Returns: {
@@ -530,6 +567,16 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      my_onboarding: {
+        Args: never
+        Returns: {
+          agency_name: string
+          commission_rate: number
+          invitation_id: string | null
+          kind: string
+          role: Database["public"]["Enums"]["user_role"]
+        }[]
       }
       register_agency: {
         Args: { p_agency_name: string; p_full_name: string; p_nit: string }

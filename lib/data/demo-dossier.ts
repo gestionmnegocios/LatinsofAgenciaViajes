@@ -19,6 +19,7 @@ export function createDemoDossier(now: number): Dossier {
     id: DEMO_DOSSIER_ID,
     agencyId: "a0000000-0000-4000-8000-000000000001",
     agencyName: "Viajes Laureles",
+    agencyNit: "900123456-7",
     code: "EXP-1049",
     destinationTitle: "Cancún – Familia Pérez",
     departureDate: isoDate(now + 45 * DAY),

@@ -120,6 +120,7 @@ export interface Dossier {
   id: string;
   agencyId: string;
   agencyName: string;
+  agencyNit: string;
   /** Ej. EXP-1049. */
   code: string;
   destinationTitle: string;

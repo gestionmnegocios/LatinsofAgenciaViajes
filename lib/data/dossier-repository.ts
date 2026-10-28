@@ -98,7 +98,7 @@ export async function fetchDossier(id: string): Promise<{ dossier: Dossier; prov
   const [client, agent, agency, options, payments, commission, providers] = await Promise.all([
     sb.from("clients").select("id, document_number, full_name, whatsapp").eq("id", row.client_id).single(),
     sb.from("agency_users").select("id, full_name, default_commission_rate").eq("id", row.agent_id).single(),
-    sb.from("agencies").select("name").eq("id", row.agency_id).single(),
+    sb.from("agencies").select("name, nit").eq("id", row.agency_id).single(),
     sb.from("quote_options").select("*, dossier_services(*)").eq("dossier_id", id).order("created_at"),
     sb.from("client_payments").select("*").eq("dossier_id", id).order("paid_at"),
     sb.from("agent_commissions").select("commission_percentage").eq("dossier_id", id).maybeSingle(),
@@ -112,6 +112,7 @@ export async function fetchDossier(id: string): Promise<{ dossier: Dossier; prov
     id: row.id,
     agencyId: row.agency_id,
     agencyName: agency.data!.name,
+    agencyNit: agency.data!.nit,
     code: row.dossier_code,
     destinationTitle: row.destination_title,
     departureDate: row.departure_date,
