@@ -45,7 +45,7 @@ al peso. Con margen ≤ 0 no se genera IVA ni comisión.
 
 ## Supabase
 
-Proyecto: `LatinsofAgenciaViajes` (`oboqmueszriimadxxzyc`). Las tres migraciones
+Proyecto: `LatinsofAgenciaViajes` (`oboqmueszriimadxxzyc`). Las migraciones
 de `supabase/migrations/` están aplicadas. `.env.local` (no versionado) tiene la
 URL y la llave publicable; usa `.env.example` como plantilla.
 
@@ -53,12 +53,15 @@ URL y la llave publicable; usa `.env.example` como plantilla.
 | --- | --- |
 | `/` | Login → registro de agencia (primer usuario = ADMIN) → listado de expedientes + Apertura Flash |
 | `/expediente?id=…` | Workspace conectado: autoguardado (~0,7 s), confirmar y liquidar vía RPC |
+| `/comisiones` | Corte de comisiones (FR-4.4): por pagar / retenidas / pagadas, agrupadas por asesor; pago en lote y cuenta de cobro imprimible a PDF. El asesor ve solo las suyas |
 | `/demo` | El mismo Workspace con datos en memoria, sin backend |
 
 RPC de aplicación (`20261028000100_app_rpcs.sql`): `register_agency`,
 `create_dossier` (consecutivo `EXP-####` por agencia) y `sync_dossier_options`
 (guarda opciones y servicios en una transacción). `convert_quote_to_file` y
-`liquidate_dossier` recalculan las cifras en el servidor.
+`liquidate_dossier` recalculan las cifras en el servidor. `settle_commissions`
+(`20261028000300_commission_settlement.sql`) pasa en lote comisiones RELEASED a
+PAID con un mismo `settlement_batch_id`; solo ADMIN.
 
 Tras cambiar el esquema: aplicar la migración, regenerar
 `lib/supabase/database.types.ts` y correr `npm run test:rls`.

@@ -521,6 +521,10 @@ export type Database = {
         Args: { p_agency_name: string; p_full_name: string; p_nit: string }
         Returns: string
       }
+      settle_commissions: {
+        Args: { p_commission_ids: string[] }
+        Returns: string
+      }
       sync_dossier_options: {
         Args: { p_dossier_id: string; p_options: Json }
         Returns: undefined

@@ -27,11 +27,11 @@ type ProviderRow = Tables["providers_catalog"]["Row"];
 /** Error con mensaje listo para mostrar al asesor. */
 export class RepositoryError extends Error {}
 
-function fail(error: { message: string } | null, fallback: string): never {
+export function fail(error: { message: string } | null, fallback: string): never {
   throw new RepositoryError(error?.message ?? fallback);
 }
 
-const num = (v: number | string | null | undefined): number => (v == null ? 0 : Number(v));
+export const num = (v: number | string | null | undefined): number => (v == null ? 0 : Number(v));
 
 function toService(row: ServiceRow): DossierService {
   return {

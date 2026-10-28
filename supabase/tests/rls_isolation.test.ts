@@ -360,6 +360,37 @@ describe("Flujo completo de la Agencia A (DRAFT → CONFIRMED → LIQUIDATED)", 
       assert.equal(await count(`select 1 from public.agent_commissions where dossier_id = $1`, [A.dossier]), 0);
     });
   });
+
+  test("corte de comisiones: solo ADMIN, solo RELEASED propias, en lote a PAID", async () => {
+    const ids = async () =>
+      (await db.query<{ id: string }>(`select id from public.agent_commissions where agency_id = $1`, [A.agency])).rows.map(
+        (r) => r.id,
+      );
+    const own = await ids();
+    const foreign = (await db.query<{ id: string }>(`select id from public.agent_commissions where agency_id = $1`, [B.agency]))
+      .rows[0].id;
+
+    await asUser(A.agent, async () => {
+      await assert.rejects(db.query(`select public.settle_commissions($1)`, [own]), /administrador/);
+    });
+    await asUser(A.admin, async () => {
+      // Mezclar una comisión de B invalida todo el lote.
+      await assert.rejects(db.query(`select public.settle_commissions($1)`, [[...own, foreign]]), /liberadas/);
+      await assert.rejects(db.query(`select public.settle_commissions($1)`, [[]]), /seleccionadas/);
+
+      const { rows } = await db.query<{ batch: string }>(`select public.settle_commissions($1) as batch`, [own]);
+      const paid = await db.query<{ status: string; settlement_batch_id: string; paid_at: string | null }>(
+        `select status, settlement_batch_id, paid_at from public.agent_commissions where id = any ($1)`,
+        [own],
+      );
+      assert.ok(paid.rows.every((r) => r.status === "PAID" && r.settlement_batch_id === rows[0].batch && r.paid_at));
+
+      // Una comisión ya pagada no se paga dos veces.
+      await assert.rejects(db.query(`select public.settle_commissions($1)`, [own]), /liberadas/);
+    });
+    const b = await db.query<{ status: string }>(`select status from public.agent_commissions where id = $1`, [foreign]);
+    assert.equal(b.rows[0].status, "HELD");
+  });
 });
 
 describe("RPC de aplicación", () => {
