@@ -1,0 +1,467 @@
+/**
+ * Criterio de aceptación 3 · Segregación multi-tenant.
+ *
+ * Ejecuta la migración real sobre PGlite (PostgreSQL en WASM) con un stub del
+ * esquema `auth` de Supabase y verifica, actuando como el rol `authenticated`
+ * con el JWT de un asesor de la Agencia A, que no puede leer ni escribir nada
+ * de la Agencia B aunque conozca sus IDs.
+ *
+ *   npm run test:rls
+ */
+import { after, before, describe, test } from "node:test";
+import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+
+import { PGlite } from "@electric-sql/pglite";
+
+const MIGRATIONS_DIR = new URL("../migrations/", import.meta.url);
+/** Todas las migraciones en orden, igual que `supabase db push`. */
+const MIGRATION = readdirSync(MIGRATIONS_DIR)
+  .filter((f) => f.endsWith(".sql"))
+  .sort()
+  .map((f) => readFileSync(new URL(f, MIGRATIONS_DIR), "utf8"))
+  .join("\n");
+
+/** Stub mínimo de lo que Supabase provee antes de las migraciones. */
+const SUPABASE_STUB = `
+  create role anon nologin;
+  create role authenticated nologin;
+  create schema auth;
+  create table auth.users (id uuid primary key, email text);
+  create function auth.uid() returns uuid language sql stable as $$
+    select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
+  $$;
+  grant usage on schema auth to anon, authenticated;
+  grant execute on function auth.uid() to anon, authenticated;
+`;
+
+/** Grants por defecto que Supabase aplica a las tablas de `public`. */
+const SUPABASE_GRANTS = `
+  grant usage on schema public to anon, authenticated;
+  grant select, insert, update, delete on all tables in schema public to anon, authenticated;
+`;
+
+const A = {
+  agency: "aaaaaaaa-0000-4000-8000-000000000001",
+  admin: "aaaaaaaa-0000-4000-8000-0000000000a1",
+  agent: "aaaaaaaa-0000-4000-8000-0000000000a2",
+  client: "aaaaaaaa-0000-4000-8000-0000000000c1",
+  dossier: "aaaaaaaa-0000-4000-8000-0000000000d1",
+  option1: "aaaaaaaa-0000-4000-8000-0000000000e1",
+  option2: "aaaaaaaa-0000-4000-8000-0000000000e2",
+  service: "aaaaaaaa-0000-4000-8000-0000000000f1",
+};
+const B = {
+  agency: "bbbbbbbb-0000-4000-8000-000000000001",
+  admin: "bbbbbbbb-0000-4000-8000-0000000000a1",
+  client: "bbbbbbbb-0000-4000-8000-0000000000c1",
+  dossier: "bbbbbbbb-0000-4000-8000-0000000000d1",
+  option: "bbbbbbbb-0000-4000-8000-0000000000e1",
+  service: "bbbbbbbb-0000-4000-8000-0000000000f1",
+  provider: "bbbbbbbb-0000-4000-8000-0000000000b1",
+  payment: "bbbbbbbb-0000-4000-8000-0000000000aa",
+};
+
+let db: PGlite;
+
+/** Ejecuta `fn` como usuario autenticado (equivalente a una petición PostgREST con su JWT). */
+async function asUser<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+  await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub', '${userId}', false);`);
+  try {
+    return await fn();
+  } finally {
+    await db.exec(`reset role; select set_config('request.jwt.claim.sub', '', false);`);
+  }
+}
+
+async function count(sql: string, params: unknown[] = []): Promise<number> {
+  const result = await db.query<{ n: number }>(`select count(*)::int as n from (${sql}) q`, params);
+  return result.rows[0].n;
+}
+
+before(async () => {
+  db = new PGlite();
+  await db.exec(SUPABASE_STUB);
+  await db.exec(MIGRATION);
+  await db.exec(SUPABASE_GRANTS);
+
+  // Datos semilla como superusuario (bypass RLS).
+  await db.exec(`
+    insert into auth.users (id) values ('${A.admin}'), ('${A.agent}'), ('${B.admin}');
+    insert into public.agencies (id, name, nit) values
+      ('${A.agency}', 'Agencia A', '900111111'),
+      ('${B.agency}', 'Agencia B', '900222222');
+    insert into public.agency_users (id, agency_id, full_name, role, default_commission_rate) values
+      ('${A.admin}', '${A.agency}', 'Gladys', 'ADMIN', 15),
+      ('${A.agent}', '${A.agency}', 'Laura',  'AGENT', 15),
+      ('${B.admin}', '${B.agency}', 'Otro',   'ADMIN', 10);
+    insert into public.clients (id, agency_id, document_number, full_name, whatsapp) values
+      ('${A.client}', '${A.agency}', '1036', 'Andrés Pérez', '3001234567'),
+      ('${B.client}', '${B.agency}', '7070', 'Cliente B',    '3009999999');
+    insert into public.travel_dossiers
+      (id, agency_id, agent_id, client_id, dossier_code, destination_title, departure_date, return_date) values
+      ('${A.dossier}', '${A.agency}', '${A.agent}', '${A.client}', 'EXP-1049', 'Cancún', '2026-12-15', '2026-12-20'),
+      ('${B.dossier}', '${B.agency}', '${B.admin}', '${B.client}', 'EXP-0001', 'Miami',  '2026-12-01', '2026-12-05');
+    insert into public.quote_options (id, agency_id, dossier_id, option_title) values
+      ('${A.option1}', '${A.agency}', '${A.dossier}', 'Opción 1'),
+      ('${A.option2}', '${A.agency}', '${A.dossier}', 'Opción 2'),
+      ('${B.option}',  '${B.agency}', '${B.dossier}', 'Opción 1');
+    insert into public.providers_catalog (id, agency_id, name, category) values
+      ('${B.provider}', '${B.agency}', 'Proveedor secreto de B', 'OPERADOR_LOCAL');
+    insert into public.dossier_services
+      (id, agency_id, quote_option_id, provider_id, provider_name, service_type, net_cost_original, sale_price) values
+      ('${A.service}', '${A.agency}', '${A.option1}', '00000000-0000-4000-8000-000000000001', 'Mayorplus', 'PACKAGE', 3200000, 3800000),
+      ('${B.service}', '${B.agency}', '${B.option}',  '${B.provider}', 'Proveedor secreto de B', 'HOTEL', 1000000, 1500000);
+    insert into public.client_payments (id, agency_id, dossier_id, amount, payment_method, registered_by) values
+      ('${B.payment}', '${B.agency}', '${B.dossier}', 500000, 'CASH', '${B.admin}');
+    insert into public.agent_commissions (agency_id, dossier_id, agent_id, commission_percentage, calculated_amount) values
+      ('${B.agency}', '${B.dossier}', '${B.admin}', 10, 42016.81);
+  `);
+});
+
+after(async () => {
+  await db?.close();
+});
+
+describe("Lectura: la Agencia A no ve datos de la Agencia B", () => {
+  const tables = [
+    "agencies",
+    "agency_users",
+    "clients",
+    "travel_dossiers",
+    "quote_options",
+    "dossier_services",
+    "client_payments",
+    "agent_commissions",
+  ];
+
+  for (const table of tables) {
+    test(`${table}: 0 filas de B (incluso filtrando por ID)`, async () => {
+      await asUser(A.admin, async () => {
+        const column = table === "agencies" ? "id" : "agency_id";
+        assert.equal(await count(`select 1 from public.${table} where ${column} = $1`, [B.agency]), 0);
+      });
+    });
+  }
+
+  test("travel_dossiers: el ID exacto de B devuelve vacío", async () => {
+    await asUser(A.admin, async () => {
+      assert.equal(await count(`select 1 from public.travel_dossiers where id = $1`, [B.dossier]), 0);
+      assert.equal(await count(`select 1 from public.travel_dossiers`), 1);
+    });
+  });
+
+  test("providers_catalog: ve los 12 globales pero no los personalizados de B", async () => {
+    await asUser(A.admin, async () => {
+      assert.equal(await count(`select 1 from public.providers_catalog where id = $1`, [B.provider]), 0);
+      assert.equal(await count(`select 1 from public.providers_catalog where is_system_preload`), 12);
+    });
+  });
+
+  test("compute_dossier_financials sobre B devuelve ceros", async () => {
+    await asUser(A.admin, async () => {
+      const { rows } = await db.query<{ total_sale: string }>(
+        `select total_sale from public.compute_dossier_financials($1)`,
+        [B.dossier],
+      );
+      assert.equal(Number(rows[0].total_sale), 0);
+    });
+  });
+
+  test("sin JWT (anon) no se ve nada", async () => {
+    await db.exec(`set role anon;`);
+    try {
+      assert.equal(await count(`select 1 from public.travel_dossiers`), 0);
+      assert.equal(await count(`select 1 from public.providers_catalog`), 0);
+    } finally {
+      await db.exec(`reset role;`);
+    }
+  });
+});
+
+describe("Escritura: manipulación de IDs bloqueada", () => {
+  test("abono con agency_id de B → rechazado por RLS", async () => {
+    await asUser(A.admin, async () => {
+      await assert.rejects(
+        db.query(
+          `insert into public.client_payments (agency_id, dossier_id, amount, payment_method) values ($1, $2, 1, 'CASH')`,
+          [B.agency, B.dossier],
+        ),
+        /row-level security/,
+      );
+    });
+  });
+
+  test("abono con agency_id propio colgado del expediente de B → rechazado por FK compuesta", async () => {
+    await asUser(A.admin, async () => {
+      await assert.rejects(
+        db.query(
+          `insert into public.client_payments (agency_id, dossier_id, amount, payment_method) values ($1, $2, 1, 'CASH')`,
+          [A.agency, B.dossier],
+        ),
+        /foreign key/,
+      );
+    });
+  });
+
+  test("UPDATE / DELETE sobre filas de B afectan 0 filas", async () => {
+    await asUser(A.admin, async () => {
+      const upd = await db.query(`update public.dossier_services set sale_price = 1 where id = $1`, [B.service]);
+      const del = await db.query(`delete from public.client_payments where id = $1`, [B.payment]);
+      assert.equal(upd.affectedRows, 0);
+      assert.equal(del.affectedRows, 0);
+    });
+    const { rows } = await db.query<{ sale_price: string }>(
+      `select sale_price from public.dossier_services where id = $1`,
+      [B.service],
+    );
+    assert.equal(Number(rows[0].sale_price), 1_500_000);
+  });
+
+  test("mover un expediente propio a la agencia B → rechazado", async () => {
+    await asUser(A.admin, async () => {
+      await assert.rejects(
+        db.query(`update public.travel_dossiers set agency_id = $1 where id = $2`, [B.agency, A.dossier]),
+        /row-level security|foreign key/,
+      );
+    });
+  });
+
+  test("usar el proveedor personalizado de B en un servicio propio → rechazado", async () => {
+    await asUser(A.admin, async () => {
+      await assert.rejects(
+        db.query(
+          `insert into public.dossier_services (agency_id, quote_option_id, provider_id, provider_name, service_type)
+           values ($1, $2, $3, 'x', 'TOUR')`,
+          [A.agency, A.option1, B.provider],
+        ),
+        /no disponible/,
+      );
+    });
+  });
+
+  test("editar un proveedor global del sistema → 0 filas", async () => {
+    await asUser(A.admin, async () => {
+      const r = await db.query(
+        `update public.providers_catalog set name = 'hack' where id = '00000000-0000-4000-8000-000000000001'`,
+      );
+      assert.equal(r.affectedRows, 0);
+    });
+  });
+
+  test("escribir comisiones directamente → rechazado", async () => {
+    await asUser(A.admin, async () => {
+      await assert.rejects(
+        db.query(
+          `insert into public.agent_commissions (agency_id, dossier_id, agent_id, commission_percentage, calculated_amount)
+           values ($1, $2, $3, 100, 999999999)`,
+          [A.agency, A.dossier, A.agent],
+        ),
+        /row-level security/,
+      );
+    });
+  });
+
+  test("RPC sobre el expediente de B → 'Expediente no encontrado'", async () => {
+    await asUser(A.admin, async () => {
+      await assert.rejects(db.query(`select public.liquidate_dossier($1)`, [B.dossier]), /no encontrado/);
+      await assert.rejects(
+        db.query(`select public.convert_quote_to_file($1, $2)`, [B.dossier, B.option]),
+        /no encontrado/,
+      );
+    });
+  });
+});
+
+describe("Flujo completo de la Agencia A (DRAFT → CONFIRMED → LIQUIDATED)", () => {
+  test("conversión, comisión retenida, liquidación y blindaje", async () => {
+    // Saltar estados por UPDATE directo está prohibido.
+    await asUser(A.agent, async () => {
+      await assert.rejects(
+        db.query(`update public.travel_dossiers set status = 'LIQUIDATED' where id = $1`, [A.dossier]),
+        /liquidate_dossier/,
+      );
+    });
+
+    await asUser(A.agent, async () => {
+      await db.query(`select public.convert_quote_to_file($1, $2)`, [A.dossier, A.option1]);
+
+      const d = await db.query<{ status: string; gross_margin: string; net_utility_base: string; iva_margin: string }>(
+        `select status, gross_margin, net_utility_base, iva_margin from public.travel_dossiers where id = $1`,
+        [A.dossier],
+      );
+      assert.equal(d.rows[0].status, "CONFIRMED");
+      assert.equal(Number(d.rows[0].gross_margin), 600_000);
+      assert.equal(Number(d.rows[0].net_utility_base), 504_201.68);
+      assert.equal(Number(d.rows[0].iva_margin), 95_798.32);
+
+      const opts = await db.query<{ id: string; is_selected: boolean; is_archived: boolean }>(
+        `select id, is_selected, is_archived from public.quote_options where dossier_id = $1 order by option_title`,
+        [A.dossier],
+      );
+      assert.deepEqual(
+        opts.rows.map((o) => [o.is_selected, o.is_archived]),
+        [
+          [true, false],
+          [false, true],
+        ],
+      );
+
+      // El asesor ve su propia comisión, retenida.
+      const c = await db.query<{ status: string; calculated_amount: string }>(
+        `select status, calculated_amount from public.agent_commissions where dossier_id = $1`,
+        [A.dossier],
+      );
+      assert.equal(c.rows[0].status, "HELD");
+      assert.equal(Number(c.rows[0].calculated_amount), 75_630.25);
+
+      // Sin pago completo ni proveedor pagado no liquida.
+      await assert.rejects(db.query(`select public.liquidate_dossier($1)`, [A.dossier]), /saldo pendiente/);
+
+      await db.query(
+        `insert into public.client_payments (agency_id, dossier_id, amount, payment_method) values ($1, $2, 3800000, 'TRANSFER_BANCOLOMBIA')`,
+        [A.agency, A.dossier],
+      );
+      await assert.rejects(db.query(`select public.liquidate_dossier($1)`, [A.dossier]), /sin pago al proveedor/);
+
+      await db.query(`update public.dossier_services set is_provider_paid = true where id = $1`, [A.service]);
+      await db.query(`select public.liquidate_dossier($1)`, [A.dossier]);
+
+      const released = await db.query<{ status: string }>(
+        `select status from public.agent_commissions where dossier_id = $1`,
+        [A.dossier],
+      );
+      assert.equal(released.rows[0].status, "RELEASED");
+
+      // Expediente liquidado: inmutable.
+      await assert.rejects(
+        db.query(`update public.dossier_services set sale_price = 1 where id = $1`, [A.service]),
+        /liquidado/,
+      );
+      await assert.rejects(
+        db.query(
+          `insert into public.client_payments (agency_id, dossier_id, amount, payment_method) values ($1, $2, 1, 'CASH')`,
+          [A.agency, A.dossier],
+        ),
+        /liquidado/,
+      );
+      await assert.rejects(
+        db.query(`update public.travel_dossiers set destination_title = 'x' where id = $1`, [A.dossier]),
+        /liquidado/,
+      );
+    });
+  });
+
+  test("la admin de A ve la comisión de Laura; la Agencia B no", async () => {
+    await asUser(A.admin, async () => {
+      assert.equal(await count(`select 1 from public.agent_commissions`), 1);
+    });
+    await asUser(B.admin, async () => {
+      assert.equal(await count(`select 1 from public.agent_commissions where dossier_id = $1`, [A.dossier]), 0);
+    });
+  });
+});
+
+describe("RPC de aplicación", () => {
+  const NEW_USER = "cccccccc-0000-4000-8000-0000000000a1";
+
+  test("register_agency crea la agencia y deja al usuario como ADMIN (solo una vez)", async () => {
+    await db.exec(`insert into auth.users (id) values ('${NEW_USER}');`);
+    await asUser(NEW_USER, async () => {
+      const { rows } = await db.query<{ id: string }>(
+        `select public.register_agency('Agencia C', '900333333', 'Carlos') as id`,
+      );
+      assert.ok(rows[0].id);
+      const me = await db.query<{ role: string }>(`select role from public.agency_users where id = $1`, [NEW_USER]);
+      assert.equal(me.rows[0].role, "ADMIN");
+      await assert.rejects(db.query(`select public.register_agency('Otra', '900444444', 'Carlos')`), /ya pertenece/);
+      // La agencia nueva no ve nada de A ni de B.
+      assert.equal(await count(`select 1 from public.travel_dossiers`), 0);
+    });
+  });
+
+  test("create_dossier genera EXP consecutivo, upsert de cliente y Opción 1", async () => {
+    await asUser(A.agent, async () => {
+      const first = await db.query<{ id: string }>(
+        `select public.create_dossier('555', 'Ana Ruiz', '3015550000', 'San Andrés', '2027-01-10', '2027-01-15', 2, 0) as id`,
+      );
+      const second = await db.query<{ id: string }>(
+        `select public.create_dossier('555', 'Ana María Ruiz', '3015550000', 'Cartagena', '2027-02-10', '2027-02-12', 1, 1) as id`,
+      );
+      const codes = await db.query<{ dossier_code: string; has_minors: boolean }>(
+        `select dossier_code, has_minors from public.travel_dossiers where id = any($1::uuid[]) order by dossier_code`,
+        [[first.rows[0].id, second.rows[0].id]],
+      );
+      assert.deepEqual(codes.rows.map((r) => r.dossier_code), ["EXP-1050", "EXP-1051"]);
+      assert.equal(codes.rows[1].has_minors, true);
+      assert.equal(await count(`select 1 from public.clients where document_number = '555'`), 1);
+      assert.equal(await count(`select 1 from public.quote_options where dossier_id = $1`, [first.rows[0].id]), 1);
+    });
+  });
+
+  test("sync_dossier_options: alta, edición y baja atómicas; USD sin TRM bloquea la conversión", async () => {
+    await asUser(A.agent, async () => {
+      const { rows } = await db.query<{ id: string }>(
+        `select public.create_dossier('777', 'Beto', '3017770000', 'Punta Cana', '2027-03-01', '2027-03-06', 2, 0) as id`,
+      );
+      const dossierId = rows[0].id;
+      const opt = await db.query<{ id: string }>(`select id from public.quote_options where dossier_id = $1`, [dossierId]);
+      const optionId = opt.rows[0].id;
+      const option2 = crypto.randomUUID();
+      const svc = (id: string, patch: Record<string, unknown> = {}) => ({
+        id,
+        providerId: "00000000-0000-4000-8000-000000000003",
+        providerName: "Ciclo Viajes",
+        serviceType: "HOTEL",
+        description: "Hotel",
+        bookingReference: "",
+        currency: "USD",
+        exchangeRate: 4000,
+        netCostOriginal: 800,
+        salePrice: 3800000,
+        paymentDeadline: null,
+        isProviderPaid: false,
+        ...patch,
+      });
+      const s1 = crypto.randomUUID();
+      const s2 = crypto.randomUUID();
+      const sync = (options: unknown) =>
+        db.query(`select public.sync_dossier_options($1, $2::jsonb)`, [dossierId, JSON.stringify(options)]);
+
+      await sync([
+        { id: optionId, title: "Opción 1", services: [svc(s1), svc(s2, { currency: "COP", exchangeRate: 1, netCostOriginal: 100000, salePrice: 150000 })] },
+        { id: option2, title: "Opción 2", services: [] },
+      ]);
+      const cost = await db.query<{ net_cost: string }>(`select net_cost from public.dossier_services where id = $1`, [s1]);
+      assert.equal(Number(cost.rows[0].net_cost), 3_200_000, "net_cost calculado por la base (USD × TRM)");
+      assert.equal(await count(`select 1 from public.quote_options where dossier_id = $1`, [dossierId]), 2);
+
+      // Baja de s2 y de la Opción 2; s1 queda sin TRM.
+      await sync([{ id: optionId, title: "Opción 1 · Ciclo", services: [svc(s1, { exchangeRate: 0 })] }]);
+      assert.equal(await count(`select 1 from public.dossier_services where id = $1`, [s2]), 0);
+      assert.equal(await count(`select 1 from public.quote_options where dossier_id = $1`, [dossierId]), 1);
+
+      await assert.rejects(db.query(`select public.convert_quote_to_file($1, $2)`, [dossierId, optionId]), /sin TRM/);
+      await sync([{ id: optionId, title: "Opción 1 · Ciclo", services: [svc(s1)] }]);
+      await db.query(`select public.convert_quote_to_file($1, $2)`, [dossierId, optionId]);
+    });
+  });
+
+  test("sync_dossier_options no puede tocar expedientes de otra agencia", async () => {
+    await asUser(A.admin, async () => {
+      await assert.rejects(
+        db.query(`select public.sync_dossier_options($1, '[]'::jsonb)`, [B.dossier]),
+        /no encontrado/,
+      );
+      // Reusar el ID de un servicio de B dentro de un expediente propio no lo secuestra.
+      await assert.rejects(
+        db.query(`select public.sync_dossier_options($1, $2::jsonb)`, [
+          A.dossier,
+          JSON.stringify([{ id: A.option1, title: "x", services: [{ id: B.service, serviceType: "TOUR", currency: "COP", providerName: "x" }] }]),
+        ]),
+      );
+    });
+    const { rows } = await db.query<{ agency_id: string }>(`select agency_id from public.dossier_services where id = $1`, [B.service]);
+    assert.equal(rows[0].agency_id, B.agency);
+  });
+});
