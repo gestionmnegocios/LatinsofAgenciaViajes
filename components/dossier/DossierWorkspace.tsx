@@ -9,6 +9,7 @@ import {
   BadgeCheck,
   CloudCheck,
   Loader2,
+  MessageCircle,
   CalendarDays,
   Check,
   Copy,
@@ -31,6 +32,7 @@ import {
 import { FinancialThermometer } from "./FinancialThermometer";
 import { MoneyInput } from "./MoneyInput";
 import { PaymentDrawer } from "./PaymentDrawer";
+import { buildQuoteMessage, buildWhatsappLink, earliestValidDeadline } from "@/lib/whatsapp";
 import { ServicesTable } from "./ServicesTable";
 
 /**
@@ -76,6 +78,17 @@ export function DossierWorkspace({ backHref }: { backHref?: string }) {
 
   const isDraft = dossier.status === "DRAFT";
   const archivedCount = dossier.options.filter((o) => o.isArchived).length;
+  const quotedCount = dossier.options.filter((o) => !o.isArchived && o.services.some((s) => s.salePrice > 0)).length;
+
+  function sendQuote() {
+    if (!dossier) return;
+    const message = buildQuoteMessage({
+      dossier,
+      options: dossier.options,
+      validUntil: earliestValidDeadline(dossier.options, Date.now()),
+    });
+    window.open(buildWhatsappLink(message, dossier.client.whatsapp), "_blank", "noopener,noreferrer");
+  }
 
   return (
     <div className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
@@ -292,10 +305,30 @@ export function DossierWorkspace({ backHref }: { backHref?: string }) {
           )}
 
           {isDraft && option && (
+            <div className="flex flex-col items-start gap-2 rounded-xl border border-slate-200 bg-white px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-slate-600">
+                <span className="font-medium text-slate-900">1. Enviar al cliente.</span>{" "}
+                {quotedCount > 1 ? `Van las ${quotedCount} opciones` : "Va la cotización"} con precios de venta, sin
+                costos ni mayoristas, para que la apruebe por WhatsApp.
+              </p>
+              <button
+                type="button"
+                disabled={quotedCount === 0}
+                onClick={sendQuote}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                <MessageCircle className="size-4" aria-hidden /> Enviar cotización por WhatsApp
+              </button>
+            </div>
+          )}
+
+          {isDraft && option && (
             <div className="flex flex-col items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-slate-600">
-                ¿El cliente aprobó por WhatsApp? Confirma <strong>{option.title}</strong>: se congela y las demás
-                opciones se archivan.
+                <span className="font-medium text-slate-900">2. ¿El cliente aprobó?</span>{" "}
+                {quotedCount > 1 && "Elige arriba la pestaña de la opción que respondió y "}
+                {quotedCount > 1 ? "confirma" : "Confirma"} <strong>{option.title}</strong>: se congela y las demás opciones
+                se archivan.
               </p>
               <button
                 type="button"

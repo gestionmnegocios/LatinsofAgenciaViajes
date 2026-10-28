@@ -1,13 +1,13 @@
 /**
- * Recibo de abono pre-redactado para WhatsApp (FR-3.2).
+ * Mensajes pre-redactados para WhatsApp: cotización (FR-2.4) y recibo de abono (FR-3.2).
  *
  * El texto se arma con saltos de línea reales y emojis Unicode, y se codifica
  * una sola vez con `encodeURIComponent`, que serializa correctamente los pares
  * sustitutos UTF-16 de los emojis (👉 → %F0%9F%91%89) y los "\n" (%0A).
  */
 
-import type { ClientPayment, Dossier, FinancialSummary, PaymentMethod } from "./finance/types.ts";
-import { formatCOP, formatDate } from "./finance/format.ts";
+import type { ClientPayment, Dossier, FinancialSummary, PaymentMethod, QuoteOption, ServiceType } from "./finance/types.ts";
+import { formatCOP, formatDate, formatDateTime } from "./finance/format.ts";
 
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   TRANSFER_BANCOLOMBIA: "Transferencia Bancolombia",
@@ -71,6 +71,101 @@ export function buildReceiptMessage({
 
   lines.push("", "¡Gracias por viajar con nosotros! 🌴");
   return lines.join("\n");
+}
+
+const SERVICE_EMOJI: Record<ServiceType, string> = {
+  HOTEL: "🏨",
+  FLIGHT: "✈️",
+  PACKAGE: "🧳",
+  ASSISTANCE: "🩺",
+  TRANSFER: "🚐",
+  TOUR: "🗺️",
+};
+
+const SERVICE_LABEL: Record<ServiceType, string> = {
+  HOTEL: "Hotel",
+  FLIGHT: "Vuelo",
+  PACKAGE: "Paquete",
+  ASSISTANCE: "Asistencia médica",
+  TRANSFER: "Traslados",
+  TOUR: "Tour",
+};
+
+const NUMBER_EMOJI = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
+
+export interface QuoteMessageInput {
+  dossier: Pick<
+    Dossier,
+    "agencyName" | "code" | "destinationTitle" | "departureDate" | "returnDate" | "adultsCount" | "childrenCount" | "client"
+  >;
+  options: readonly Pick<QuoteOption, "services" | "isArchived">[];
+  /** Fecha y hora hasta la que se sostienen los precios (ISO), opcional. */
+  validUntil?: string | null;
+}
+
+/**
+ * Cotización para que el cliente apruebe por WhatsApp (FR-2.4). Solo precios
+ * de venta: nunca costos, márgenes ni el nombre del mayorista.
+ */
+export function buildQuoteMessage({ dossier, options, validUntil }: QuoteMessageInput): string {
+  const firstName = dossier.client.fullName.split(" ")[0] ?? dossier.client.fullName;
+  const pax = [
+    `${dossier.adultsCount} ${dossier.adultsCount === 1 ? "adulto" : "adultos"}`,
+    dossier.childrenCount > 0 ? `${dossier.childrenCount} ${dossier.childrenCount === 1 ? "niño" : "niños"}` : null,
+  ]
+    .filter(Boolean)
+    .join(" y ");
+
+  const quoted = options
+    .filter((o) => !o.isArchived)
+    .map((o) => ({ ...o, total: o.services.reduce((t, s) => t + s.salePrice, 0) }))
+    .filter((o) => o.total > 0);
+
+  const lines = [
+    `Hola ${firstName} 👋`,
+    "",
+    `Te comparto la cotización de *${dossier.destinationTitle}* – ${dossier.agencyName}`,
+    `📅 ${formatDate(dossier.departureDate)} → ${formatDate(dossier.returnDate)}`,
+    `👥 ${pax}`,
+  ];
+
+  quoted.forEach((option, i) => {
+    // El título de la pestaña es interno (suele llevar el mayorista): al cliente va numerada.
+    const heading = quoted.length > 1 ? `${NUMBER_EMOJI[i] ?? `${i + 1}.`} *Opción ${i + 1}*` : "*Tu plan*";
+    lines.push("", heading);
+    for (const service of option.services) {
+      const detail = service.description.trim() || SERVICE_LABEL[service.serviceType];
+      lines.push(`${SERVICE_EMOJI[service.serviceType]} ${detail}`);
+    }
+    lines.push(`💰 Total: *${formatCOP(option.total)}*`);
+  });
+
+  lines.push("");
+  if (validUntil) lines.push(`⏳ Precios sujetos a disponibilidad hasta el ${formatDateTime(validUntil)}`);
+  else lines.push("⏳ Precios sujetos a disponibilidad.");
+  lines.push(
+    quoted.length > 1
+      ? "Respóndeme con el número de la opción que prefieres y la reservamos 🙌"
+      : "Respóndeme *SÍ* para confirmar y la reservamos 🙌",
+    `📁 Ref. ${dossier.code}`,
+  );
+  return lines.join("\n");
+}
+
+/**
+ * Time-limit más próximo aún vigente entre los servicios cotizados: hasta ahí
+ * se pueden sostener los precios.
+ */
+export function earliestValidDeadline(
+  options: readonly Pick<QuoteOption, "services" | "isArchived">[],
+  now: number,
+): string | null {
+  const future = options
+    .filter((o) => !o.isArchived)
+    .flatMap((o) => o.services.map((s) => s.paymentDeadline))
+    .filter((d): d is string => d !== null && Date.parse(d) > now)
+    .sort((a, b) => Date.parse(a) - Date.parse(b));
+  return future[0] ?? null;
 }
 
 /**
