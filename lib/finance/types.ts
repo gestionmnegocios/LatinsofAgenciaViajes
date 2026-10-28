@@ -121,6 +121,11 @@ export interface Dossier {
   agencyId: string;
   agencyName: string;
   agencyNit: string;
+  /** Membrete para documentos impresos (configuración de la agencia). */
+  agencyAddress: string | null;
+  agencyCity: string | null;
+  agencyPhone: string | null;
+  agencyLogoUrl: string | null;
   /** Ej. EXP-1049. */
   code: string;
   destinationTitle: string;

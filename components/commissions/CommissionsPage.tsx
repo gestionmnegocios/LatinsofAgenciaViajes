@@ -6,13 +6,8 @@ import { ArrowLeft, CheckCircle2, FileText, Loader2 } from "lucide-react";
 
 import { useProfile } from "@/components/auth/AuthGate";
 import { expedienteHref } from "@/components/dossiers/DossierHome";
-import {
-  fetchAgencyInfo,
-  listCommissions,
-  settleCommissions,
-  type AgencyInfo,
-  type CommissionItem,
-} from "@/lib/data/commission-repository";
+import { fetchAgencyInfo, type AgencyInfo } from "@/lib/data/agency-repository";
+import { listCommissions, settleCommissions, type CommissionItem } from "@/lib/data/commission-repository";
 import { formatCOP, formatDate, formatDateTime } from "@/lib/finance/format";
 import type { CommissionStatus } from "@/lib/finance/types";
 import { CommissionStatements, type Statement } from "./CommissionStatement";

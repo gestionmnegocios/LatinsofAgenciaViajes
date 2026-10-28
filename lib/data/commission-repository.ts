@@ -26,12 +26,6 @@ export interface CommissionItem {
   paidAt: string | null;
 }
 
-export interface AgencyInfo {
-  name: string;
-  nit: string;
-  city: string | null;
-}
-
 export async function listCommissions(): Promise<CommissionItem[]> {
   const { data, error } = await getSupabase()
     .from("agent_commissions")
@@ -83,11 +77,5 @@ export async function listCommissions(): Promise<CommissionItem[]> {
 export async function settleCommissions(ids: readonly string[]): Promise<string> {
   const { data, error } = await getSupabase().rpc("settle_commissions", { p_commission_ids: [...ids] });
   if (error) fail(error, "No se pudo registrar el pago.");
-  return data;
-}
-
-export async function fetchAgencyInfo(agencyId: string): Promise<AgencyInfo> {
-  const { data, error } = await getSupabase().from("agencies").select("name, nit, city").eq("id", agencyId).single();
-  if (error) fail(error, "No se pudo cargar la agencia.");
   return data;
 }

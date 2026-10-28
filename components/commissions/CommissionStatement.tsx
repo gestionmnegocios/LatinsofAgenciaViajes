@@ -1,5 +1,7 @@
-import type { AgencyInfo, CommissionItem } from "@/lib/data/commission-repository";
+import type { AgencyInfo } from "@/lib/data/agency-repository";
+import type { CommissionItem } from "@/lib/data/commission-repository";
 import { formatCOP, formatDate, formatDateTime } from "@/lib/finance/format";
+import { AgencyLetterhead } from "@/components/settings/AgencyLetterhead";
 
 export interface Statement {
   key: string;
@@ -30,10 +32,7 @@ export function CommissionStatements({
         return (
           <section key={s.key} className="break-after-page px-2 py-4 text-[12px] leading-snug last:break-after-auto">
             <header className="flex items-start justify-between border-b border-slate-300 pb-3">
-              <div>
-                <p className="text-base font-semibold">{agency?.name ?? ""}</p>
-                <p>NIT {agency?.nit ?? ""}{agency?.city ? ` · ${agency.city}` : ""}</p>
-              </div>
+              <AgencyLetterhead agency={agency} />
               <div className="text-right">
                 <p className="text-base font-semibold">Liquidación de comisiones</p>
                 <p>Emitida: {formatDateTime(issuedAt)}</p>

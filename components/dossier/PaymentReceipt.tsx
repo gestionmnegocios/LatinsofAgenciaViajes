@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { AgencyLetterhead } from "@/components/settings/AgencyLetterhead";
 import { formatCOP, formatDate, formatDateTime } from "@/lib/finance/format";
 import type { ClientPayment, Dossier } from "@/lib/finance/types";
 import { PAYMENT_METHOD_LABELS } from "@/lib/whatsapp";
@@ -56,10 +57,16 @@ export function PaymentReceipt({
   return createPortal(
     <div id="print-root" className="hidden bg-white p-6 text-[13px] leading-snug text-slate-900 print:block">
       <header className="flex items-start justify-between border-b border-slate-300 pb-3">
-        <div>
-          <p className="text-lg font-semibold">{dossier.agencyName}</p>
-          {dossier.agencyNit && <p>NIT {dossier.agencyNit}</p>}
-        </div>
+        <AgencyLetterhead
+          agency={{
+            name: dossier.agencyName,
+            nit: dossier.agencyNit,
+            address: dossier.agencyAddress,
+            city: dossier.agencyCity,
+            phone: dossier.agencyPhone,
+            logoUrl: dossier.agencyLogoUrl,
+          }}
+        />
         <div className="text-right">
           <p className="text-lg font-semibold">Recibo de caja</p>
           <p className="font-mono">{payment.receiptNumber || "—"}</p>

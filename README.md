@@ -55,6 +55,7 @@ URL y la llave publicable; usa `.env.example` como plantilla.
 | `/expediente?id=…` | Workspace conectado: autoguardado (~0,7 s), confirmar y liquidar vía RPC |
 | `/comisiones` | Corte de comisiones (FR-4.4): por pagar / retenidas / pagadas, agrupadas por asesor; pago en lote y cuenta de cobro imprimible a PDF. El asesor ve solo las suyas |
 | `/equipo` | Asesores: rol, tasa de comisión y activo/inactivo; invitaciones por correo (edición solo ADMIN) |
+| `/configuracion` | Datos de la agencia (nombre, NIT, dirección, ciudad, teléfono/WhatsApp) y logo; edición solo ADMIN. Salen en recibos y cuentas de cobro |
 | `/demo` | El mismo Workspace con datos en memoria, sin backend |
 
 RPC de aplicación (`20261028000100_app_rpcs.sql`): `register_agency`,
@@ -76,6 +77,12 @@ agencia sin un ADMIN activo o mover usuarios de agencia; un usuario desactivado
 pierde el acceso por RLS y ve un aviso.
 
 Los abonos tienen recibo de caja imprimible a PDF desde el panel de abonos.
+
+### Logo de la agencia (`20261028000600_agency_settings.sql`)
+
+Bucket público `agency-logos` (PNG/JPG/WEBP/SVG, ≤ 2 MB). Solo el ADMIN escribe,
+y solo en la carpeta `<agency_id>/`. Cada subida usa un nombre nuevo (sin caché
+vieja) y borra los anteriores; `agencies.logo_url` guarda la URL pública.
 
 ### Exportación contable (`lib/accounting/export.ts`)
 

@@ -33,6 +33,19 @@ const SUPABASE_STUB = `
   $$;
   grant usage on schema auth to anon, authenticated;
   grant execute on function auth.uid() to anon, authenticated;
+
+  create schema storage;
+  create table storage.buckets (
+    id text primary key, name text not null, public boolean default false,
+    file_size_limit bigint, allowed_mime_types text[]
+  );
+  create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text);
+  alter table storage.objects enable row level security;
+  create function storage.foldername(name text) returns text[] language sql immutable as $$
+    select (string_to_array(name, '/'))[1:array_length(string_to_array(name, '/'), 1) - 1]
+  $$;
+  grant usage on schema storage to anon, authenticated;
+  grant select, insert, update, delete on storage.objects to anon, authenticated;
 `;
 
 /** Grants por defecto que Supabase aplica a las tablas de `public`. */
@@ -612,6 +625,34 @@ describe("Equipo: invitaciones y gestión de asesores", () => {
       assert.equal(await count(`select 1 from public.travel_dossiers`), 0);
       const { rows } = await db.query<{ kind: string }>(`select kind from public.my_onboarding()`);
       assert.deepEqual(rows.map((r) => r.kind), ["INACTIVE"]);
+    });
+  });
+});
+
+describe("Configuración de la agencia y logo", () => {
+  test("solo el ADMIN edita su agencia y sube logo en su carpeta", async () => {
+    await asUser(A.agent, async () => {
+      const r = await db.query(`update public.agencies set address = 'x' where id = $1`, [A.agency]);
+      assert.equal(r.affectedRows, 0);
+      await assert.rejects(
+        db.query(`insert into storage.objects (bucket_id, name) values ('agency-logos', $1)`, [`${A.agency}/logo.png`]),
+        /row-level security/,
+      );
+    });
+    await asUser(A.admin, async () => {
+      const r = await db.query(
+        `update public.agencies set address = 'Cra 70 # 1-23', phone = '3001234567', logo_url = 'https://x/logo.png' where id = $1`,
+        [A.agency],
+      );
+      assert.equal(r.affectedRows, 1);
+      await assert.rejects(db.query(`update public.agencies set name = '  ' where id = $1`, [A.agency]), /agencies_name_not_blank/);
+      // Otra agencia: ni su fila ni su carpeta.
+      assert.equal((await db.query(`update public.agencies set address = 'x' where id = $1`, [B.agency])).affectedRows, 0);
+      await assert.rejects(
+        db.query(`insert into storage.objects (bucket_id, name) values ('agency-logos', $1)`, [`${B.agency}/logo.png`]),
+        /row-level security/,
+      );
+      await db.query(`insert into storage.objects (bucket_id, name) values ('agency-logos', $1)`, [`${A.agency}/logo.png`]);
     });
   });
 });

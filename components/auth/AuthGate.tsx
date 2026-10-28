@@ -15,13 +15,16 @@ export interface AgencyProfile {
   role: "ADMIN" | "AGENT";
   agencyId: string;
   agencyName: string;
+  agencyLogoUrl: string | null;
+  /** Vuelve a leer el perfil (p. ej. tras cambiar la configuración de la agencia). */
+  reload: () => Promise<void>;
 }
 
 type SessionState =
   | { status: "loading" }
   | { status: "signed-out" }
   | { status: "no-agency"; user: User }
-  | { status: "ready"; profile: AgencyProfile };
+  | { status: "ready"; profile: Omit<AgencyProfile, "reload">; user: User };
 
 const ProfileContext = createContext<AgencyProfile | null>(null);
 
@@ -35,7 +38,7 @@ export function useProfile(): AgencyProfile {
 async function loadProfile(user: User): Promise<SessionState> {
   const { data, error } = await getSupabase()
     .from("agency_users")
-    .select("full_name, role, agency_id, agencies(name)")
+    .select("full_name, role, agency_id, agencies(name, logo_url)")
     .eq("id", user.id)
     .maybeSingle();
   if (error) throw error;
@@ -49,7 +52,9 @@ async function loadProfile(user: User): Promise<SessionState> {
       role: data.role,
       agencyId: data.agency_id,
       agencyName: (data.agencies as { name: string } | null)?.name ?? "",
+      agencyLogoUrl: (data.agencies as { logo_url: string | null } | null)?.logo_url ?? null,
     },
+    user,
   };
 }
 
@@ -121,7 +126,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
         </CenteredCard>
       );
     case "ready":
-      return <ProfileContext.Provider value={state.profile}>{children}</ProfileContext.Provider>;
+      return (
+        <ProfileContext.Provider value={{ ...state.profile, reload: () => refresh(state.user) }}>{children}</ProfileContext.Provider>
+      );
   }
 }
 

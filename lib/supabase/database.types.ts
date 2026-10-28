@@ -40,28 +40,34 @@ export type Database = {
     Tables: {
       agencies: {
         Row: {
+          address: string | null
           city: string | null
           created_at: string
           currency: string | null
           id: string
+          logo_url: string | null
           name: string
           nit: string
           phone: string | null
         }
         Insert: {
+          address?: string | null
           city?: string | null
           created_at?: string
           currency?: string | null
           id?: string
+          logo_url?: string | null
           name: string
           nit: string
           phone?: string | null
         }
         Update: {
+          address?: string | null
           city?: string | null
           created_at?: string
           currency?: string | null
           id?: string
+          logo_url?: string | null
           name?: string
           nit?: string
           phone?: string | null
