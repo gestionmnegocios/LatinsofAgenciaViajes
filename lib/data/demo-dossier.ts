@@ -104,6 +104,7 @@ export function createDemoDossier(now: number): Dossier {
     ],
     payments: [],
     providerPayments: [],
+    clientChoice: null,
     liquidatedAt: null,
   };
 }

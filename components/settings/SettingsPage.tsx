@@ -15,6 +15,7 @@ import {
   type AgencyInfo,
   type AgencySettings,
 } from "@/lib/data/agency-repository";
+import { ImageBankSection } from "./ImageBankSection";
 
 const input =
   "w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-slate-500 disabled:bg-slate-50 disabled:text-slate-500";
@@ -70,6 +71,7 @@ export function SettingsPage() {
               await profile.reload();
             }}
           />
+          <ImageBankSection agencyId={profile.agencyId} editable={isAdmin} />
           <DetailsForm
             key={`${agency.name}|${agency.nit}|${agency.address}|${agency.city}|${agency.phone}`}
             initial={agency}

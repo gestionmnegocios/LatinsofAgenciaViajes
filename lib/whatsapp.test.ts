@@ -77,3 +77,13 @@ test("vigencia: el time-limit futuro más próximo", () => {
   assert.equal(earliestValidDeadline(options, Date.parse("2026-10-30T12:00:00Z")), "2026-11-02T20:00:00Z");
   assert.equal(earliestValidDeadline(options, Date.parse("2026-12-01T00:00:00Z")), null);
 });
+
+test("mensaje con enlace web: URL intacta y llamado a «Lo quiero»", async () => {
+  const { buildQuoteLinkMessage } = await import("./whatsapp.ts");
+  const url = "https://latinsofagenciaviajes.vercel.app/cotizacion?t=3f9a2c11-0000-4000-8000-000000000001";
+  const msg = buildQuoteLinkMessage({ dossier, url, optionCount: 2 });
+  assert.ok(msg.includes(`\n${url}\n`), "el enlace va solo en su línea para que WhatsApp lo detecte");
+  assert.ok(msg.includes("las 2 opciones") && msg.includes("*Lo quiero*"));
+  assert.equal(new URL(buildWhatsappLink(msg, "3001234567")).searchParams.get("text"), msg);
+  assert.ok(buildQuoteLinkMessage({ dossier, url, optionCount: 1 }).includes("tu plan"));
+});

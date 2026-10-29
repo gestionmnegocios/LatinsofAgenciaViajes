@@ -152,6 +152,30 @@ export function buildQuoteMessage({ dossier, options, validUntil }: QuoteMessage
   return lines.join("\n");
 }
 
+/** Mensaje con el enlace a la micro-landing de la cotización. */
+export function buildQuoteLinkMessage({
+  dossier,
+  url,
+  optionCount,
+}: {
+  dossier: Pick<Dossier, "agencyName" | "code" | "destinationTitle" | "client">;
+  url: string;
+  optionCount: number;
+}): string {
+  const firstName = dossier.client.fullName.split(" ")[0] ?? dossier.client.fullName;
+  return [
+    `Hola ${firstName} 👋`,
+    "",
+    `Te comparto la cotización de *${dossier.destinationTitle}* – ${dossier.agencyName}:`,
+    url,
+    "",
+    optionCount > 1
+      ? `Ahí verás las ${optionCount} opciones; toca *Lo quiero* en la que prefieras 🙌`
+      : "Ahí verás tu plan; si te gusta, toca *Lo quiero* 🙌",
+    `📁 Ref. ${dossier.code}`,
+  ].join("\n");
+}
+
 /**
  * Time-limit más próximo aún vigente entre los servicios cotizados: hasta ahí
  * se pueden sostener los precios.

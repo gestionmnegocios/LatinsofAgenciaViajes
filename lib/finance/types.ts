@@ -165,6 +165,8 @@ export interface Dossier {
   options: QuoteOption[];
   payments: ClientPayment[];
   providerPayments: ProviderPayment[];
+  /** Opción que el cliente marcó «Lo quiero» en el enlace web (la más reciente). */
+  clientChoice: { optionId: string; acceptedAt: string } | null;
   liquidatedAt: string | null;
 }
 

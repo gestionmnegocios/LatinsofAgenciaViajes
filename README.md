@@ -57,6 +57,7 @@ URL y la llave publicable; usa `.env.example` como plantilla.
 | `/equipo` | Asesores: rol, tasa de comisión y activo/inactivo; invitaciones por correo (edición solo ADMIN) |
 | `/proveedores` | Catálogo: 12 precargados (solo lectura) y proveedores propios con NIT, moneda, plazo de pago, contacto y datos bancarios; crear, editar y eliminar (si no se usan) |
 | `/configuracion` | Datos de la agencia (nombre, NIT, dirección, ciudad, teléfono/WhatsApp) y logo; edición solo ADMIN. Salen en recibos y cuentas de cobro |
+| `/cotizacion?t=…` | Micro-landing pública de la cotización (sin sesión): logo, fotos del banco, opciones con «Lo quiero» y «Descargar PDF» |
 | `/demo` | El mismo Workspace con datos en memoria, sin backend |
 
 RPC de aplicación (`20261028000100_app_rpcs.sql`): `register_agency`,
@@ -93,6 +94,18 @@ comprobante y el localizador del momento. La base de datos impide pagar de más,
 girar en expedientes en cotización o liquidados y borrar servicios con giros, y
 con giros calcula `is_provider_paid` (lo girado cubre el costo neto); el
 autoguardado no puede pisarlo.
+
+### Micro-landing de cotización (`20261029000200_quote_landing.sql`)
+
+- Banco de imágenes por agencia (máx. 10, trigger con bloqueo) en Configuración;
+  bucket público `agency-images`, escritura solo ADMIN en su carpeta.
+- «Enlace web» en el paso 1 del Workspace crea un `quote_shares` con token
+  aleatorio y las fotos elegidas (la primera es la portada) y arma el mensaje de
+  WhatsApp con el enlace.
+- El público solo llama `get_quote_share(token)` (precios de venta, descripciones,
+  imágenes; nunca costos ni mayoristas) y `accept_quote_share(token, opción)`,
+  que registra «Lo quiero» mientras la cotización siga en DRAFT. El Workspace
+  muestra la elección; la conversión la hace el asesor.
 
 ### Exportación contable (`lib/accounting/export.ts`)
 

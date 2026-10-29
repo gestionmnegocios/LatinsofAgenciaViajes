@@ -748,3 +748,95 @@ describe("Catálogo de proveedores propios", () => {
     });
   });
 });
+
+describe("Micro-landing: banco de imágenes y enlace público", () => {
+  const DRAFT = "aaaaaaaa-0000-4000-8000-0000000003d1";
+  const OPT1 = "aaaaaaaa-0000-4000-8000-0000000003e1";
+  const OPT2 = "aaaaaaaa-0000-4000-8000-0000000003e2";
+
+  async function asAnon<T>(fn: () => Promise<T>): Promise<T> {
+    await db.exec(`set role anon; select set_config('request.jwt.claim.sub', '', false);`);
+    try {
+      return await fn();
+    } finally {
+      await db.exec(`reset role;`);
+    }
+  }
+
+  before(async () => {
+    await db.exec(`
+      insert into public.travel_dossiers
+        (id, agency_id, agent_id, client_id, dossier_code, destination_title, departure_date, return_date, adults_count)
+      values ('${DRAFT}', '${A.agency}', '${A.agent}', '${A.client}', 'EXP-3001', 'San Andrés', '2026-12-10', '2026-12-14', 2);
+      insert into public.quote_options (id, agency_id, dossier_id, option_title, created_at) values
+        ('${OPT1}', '${A.agency}', '${DRAFT}', 'Opción 1 · Mayorplus', now() - interval '1 minute'),
+        ('${OPT2}', '${A.agency}', '${DRAFT}', 'Opción 2 · Decameron', now());
+      insert into public.dossier_services (agency_id, quote_option_id, provider_name, service_type, description, net_cost_original, sale_price) values
+        ('${A.agency}', '${OPT1}', 'Mayorplus', 'PACKAGE', 'Plan 4 noches todo incluido', 2000000, 2600000),
+        ('${A.agency}', '${OPT2}', 'Hoteles Decameron', 'HOTEL', 'Decameron Aquarium', 2400000, 3100000);
+    `);
+  });
+
+  test("banco: solo ADMIN, máximo 10 por agencia", async () => {
+    const add = (n: number) =>
+      db.query(`insert into public.agency_images (agency_id, storage_path, url) values ($1, $2, $3)`, [
+        A.agency,
+        `${A.agency}/img-${n}.jpg`,
+        `https://cdn/img-${n}.jpg`,
+      ]);
+    await asUser(A.agent, async () => {
+      await assert.rejects(add(0), /row-level security/);
+    });
+    await asUser(A.admin, async () => {
+      for (let n = 1; n <= 10; n++) await add(n);
+      await assert.rejects(add(11), /máximo 10/);
+    });
+    await asUser(B.admin, async () => {
+      assert.equal(await count(`select 1 from public.agency_images`), 0);
+    });
+  });
+
+  test("enlace: el público lee sin costos y marca «Lo quiero» solo con el token", async () => {
+    const images = await asUser(A.admin, async () =>
+      (await db.query<{ id: string }>(`select id from public.agency_images order by created_at limit 2`)).rows.map((r) => r.id),
+    );
+    const token = await asUser(A.agent, async () => {
+      const { rows } = await db.query<{ token: string }>(
+        `insert into public.quote_shares (agency_id, dossier_id, image_ids) values ($1, $2, $3) returning token`,
+        [A.agency, DRAFT, images],
+      );
+      return rows[0].token;
+    });
+
+    await asAnon(async () => {
+      assert.equal(await count(`select 1 from public.quote_shares`), 0, "el público no lee la tabla");
+      const { rows } = await db.query<{ s: Record<string, unknown> }>(`select public.get_quote_share($1) as s`, [token]);
+      const share = rows[0].s as { options: { id: string; total: number }[]; images: unknown[]; clientFirstName: string };
+      const json = JSON.stringify(share);
+      assert.equal(share.options.length, 2);
+      assert.deepEqual(share.options.map((o) => Number(o.total)), [2_600_000, 3_100_000]);
+      assert.equal(share.images.length, 2);
+      assert.equal(share.clientFirstName, "Andrés");
+      for (const secret of ["2000000", "2400000", "Mayorplus", "Hoteles Decameron", "net_cost"]) {
+        assert.ok(!json.includes(secret), `no expone ${secret}`);
+      }
+
+      await assert.rejects(db.query(`select public.accept_quote_share(gen_random_uuid(), $1)`, [OPT2]), /no válido/);
+      await assert.rejects(db.query(`select public.accept_quote_share($1, $2)`, [token, A.option1]), /Opción no válida/);
+      const accepted = await db.query<{ s: { acceptedOptionId: string } }>(`select public.accept_quote_share($1, $2) as s`, [token, OPT2]);
+      assert.equal(accepted.rows[0].s.acceptedOptionId, OPT2);
+    });
+
+    await asUser(A.agent, async () => {
+      const r = await db.query<{ accepted_option_id: string }>(`select accepted_option_id from public.quote_shares where token = $1`, [token]);
+      assert.equal(r.rows[0].accepted_option_id, OPT2);
+      await db.query(`select public.convert_quote_to_file($1, $2)`, [DRAFT, OPT2]);
+    });
+    await asAnon(async () => {
+      await assert.rejects(db.query(`select public.accept_quote_share($1, $2)`, [token, OPT1]), /ya fue confirmada/);
+    });
+    await asUser(B.admin, async () => {
+      assert.equal(await count(`select 1 from public.quote_shares`), 0);
+    });
+  });
+});

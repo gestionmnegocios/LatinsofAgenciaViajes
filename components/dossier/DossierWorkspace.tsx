@@ -9,6 +9,8 @@ import {
   BadgeCheck,
   Building2,
   CloudCheck,
+  Heart,
+  Link2,
   Loader2,
   MessageCircle,
   CalendarDays,
@@ -34,6 +36,7 @@ import { FinancialThermometer } from "./FinancialThermometer";
 import { MoneyInput } from "./MoneyInput";
 import { PaymentDrawer } from "./PaymentDrawer";
 import { ProviderPaymentsDrawer } from "./ProviderPaymentsDrawer";
+import { QuoteShareDialog } from "./QuoteShareDialog";
 import { buildQuoteMessage, buildWhatsappLink, earliestValidDeadline } from "@/lib/whatsapp";
 import { ServicesTable } from "./ServicesTable";
 
@@ -54,11 +57,13 @@ export function DossierWorkspace({ backHref }: { backHref?: string }) {
   const saveError = useDossierStore((s) => s.saveError);
   const providers = useDossierStore((s) => s.providers);
   const defaultTrm = useDossierStore((s) => s.defaultTrm);
+  const hasBackend = useDossierStore((s) => s.persistence !== null);
   const actions = useDossierStore.getState();
   const option = useWorkingOption();
   const summary = useFinancialSummary();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [providerDrawerOpen, setProviderDrawerOpen] = useState(false);
   const [providerError, setProviderError] = useState<string | null>(null);
   const closeProviderDrawer = useCallback(() => setProviderDrawerOpen(false), []);
@@ -90,6 +95,9 @@ export function DossierWorkspace({ backHref }: { backHref?: string }) {
     const balance = Math.max(s.netCostOriginal - paidToProvider(s.id, dossier.providerPayments), 0);
     return t + (s.currency === "COP" ? balance : balance * s.exchangeRate);
   }, 0);
+  const chosenOption = dossier.clientChoice
+    ? dossier.options.find((o) => o.id === dossier.clientChoice!.optionId && !o.isArchived)
+    : undefined;
   const quotedCount = dossier.options.filter((o) => !o.isArchived && o.services.some((s) => s.salePrice > 0)).length;
 
   function sendQuote() {
@@ -338,16 +346,51 @@ export function DossierWorkspace({ backHref }: { backHref?: string }) {
               <p className="text-sm text-slate-600">
                 <span className="font-medium text-slate-900">1. Enviar al cliente.</span>{" "}
                 {quotedCount > 1 ? `Van las ${quotedCount} opciones` : "Va la cotización"} con precios de venta, sin
-                costos ni mayoristas, para que la apruebe por WhatsApp.
+                costos ni mayoristas: como enlace web con fotos y botón «Lo quiero», o como texto.
               </p>
-              <button
-                type="button"
-                disabled={quotedCount === 0}
-                onClick={sendQuote}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-              >
-                <MessageCircle className="size-4" aria-hidden /> Enviar cotización por WhatsApp
-              </button>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                {hasBackend && (
+                  <button
+                    type="button"
+                    disabled={quotedCount === 0}
+                    onClick={() => setShareOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    <Link2 className="size-4" aria-hidden /> Enlace web
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={quotedCount === 0}
+                  onClick={sendQuote}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:bg-slate-300 ${
+                    hasBackend
+                      ? "border border-emerald-600 text-emerald-700 hover:bg-emerald-50"
+                      : "bg-emerald-600 text-white hover:bg-emerald-700"
+                  }`}
+                >
+                  <MessageCircle className="size-4" aria-hidden /> {hasBackend ? "Texto" : "Enviar cotización por WhatsApp"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {isDraft && chosenOption && (
+            <div className="flex flex-col items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-emerald-900">
+                <Heart className="mr-1 inline size-4 fill-emerald-600 text-emerald-600" aria-hidden />
+                <strong>{dossier.client.fullName.split(" ")[0]}</strong> marcó «Lo quiero» en <strong>{chosenOption.title}</strong>{" "}
+                desde el enlace · {formatDateTime(dossier.clientChoice!.acceptedAt)}
+              </p>
+              {option?.id !== chosenOption.id && (
+                <button
+                  type="button"
+                  onClick={() => actions.setActiveOption(chosenOption.id)}
+                  className="shrink-0 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-emerald-800 ring-1 ring-emerald-300 hover:bg-emerald-100"
+                >
+                  Ver esa opción
+                </button>
+              )}
             </div>
           )}
 
@@ -406,6 +449,16 @@ export function DossierWorkspace({ backHref }: { backHref?: string }) {
             const after = useDossierStore.getState().dossier?.providerPayments.length ?? 0;
             setProviderError(after < before ? null : (useDossierStore.getState().saveError ?? "No se pudo anular el giro."));
           }}
+        />
+      )}
+
+      {isDraft && (
+        <QuoteShareDialog
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          dossier={dossier}
+          optionCount={quotedCount}
+          flush={actions.flush}
         />
       )}
 

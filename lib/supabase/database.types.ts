@@ -74,6 +74,33 @@ export type Database = {
         }
         Relationships: []
       }
+      agency_images: {
+        Row: {
+          agency_id: string
+          caption: string | null
+          created_at: string
+          id: string
+          storage_path: string
+          url: string
+        }
+        Insert: {
+          agency_id: string
+          caption?: string | null
+          created_at?: string
+          id?: string
+          storage_path: string
+          url: string
+        }
+        Update: {
+          agency_id?: string
+          caption?: string | null
+          created_at?: string
+          id?: string
+          storage_path?: string
+          url?: string
+        }
+        Relationships: []
+      }
       agency_invitations: {
         Row: {
           accepted_at: string | null
@@ -521,6 +548,42 @@ export type Database = {
           },
         ]
       }
+      quote_shares: {
+        Row: {
+          accepted_at: string | null
+          accepted_option_id: string | null
+          agency_id: string
+          created_at: string
+          created_by: string | null
+          dossier_id: string
+          id: string
+          image_ids: string[]
+          token: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_option_id?: string | null
+          agency_id: string
+          created_at?: string
+          created_by?: string | null
+          dossier_id: string
+          id?: string
+          image_ids?: string[]
+          token?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_option_id?: string | null
+          agency_id?: string
+          created_at?: string
+          created_by?: string | null
+          dossier_id?: string
+          id?: string
+          image_ids?: string[]
+          token?: string
+        }
+        Relationships: []
+      }
       travel_dossiers: {
         Row: DossierRow
         Insert: {
@@ -575,6 +638,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_quote_share: { Args: { p_option_id: string; p_token: string }; Returns: Json }
       accept_invitation: { Args: { p_invitation_id: string }; Returns: string }
       compute_dossier_financials: {
         Args: { p_dossier_id: string }
@@ -627,6 +691,7 @@ export type Database = {
           title: string
         }[]
       }
+      get_quote_share: { Args: { p_token: string }; Returns: Json }
       is_agency_admin: { Args: never; Returns: boolean }
       liquidate_dossier: {
         Args: { p_dossier_id: string }

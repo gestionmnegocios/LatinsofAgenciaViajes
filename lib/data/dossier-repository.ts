@@ -117,7 +117,7 @@ export async function fetchDossier(id: string): Promise<{ dossier: Dossier; prov
   // Con RLS, un ID de otra agencia simplemente no existe.
   if (!row) throw new RepositoryError("Expediente no encontrado.");
 
-  const [client, agent, agency, options, payments, commission, providers, providerPayments] = await Promise.all([
+  const [client, agent, agency, options, payments, commission, providers, providerPayments, choice] = await Promise.all([
     sb.from("clients").select("id, document_number, full_name, whatsapp").eq("id", row.client_id).single(),
     sb.from("agency_users").select("id, full_name, default_commission_rate").eq("id", row.agent_id).single(),
     sb.from("agencies").select("name, nit, address, city, phone, logo_url").eq("id", row.agency_id).single(),
@@ -126,6 +126,14 @@ export async function fetchDossier(id: string): Promise<{ dossier: Dossier; prov
     sb.from("agent_commissions").select("commission_percentage").eq("dossier_id", id).maybeSingle(),
     sb.from("providers_catalog").select("*").order("is_system_preload", { ascending: false }).order("name"),
     sb.from("provider_payments").select("*").eq("dossier_id", id).order("paid_at"),
+    sb
+      .from("quote_shares")
+      .select("accepted_option_id, accepted_at")
+      .eq("dossier_id", id)
+      .not("accepted_at", "is", null)
+      .order("accepted_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
   for (const r of [client, agent, agency, options, payments, providers, providerPayments]) {
     if (r.error) fail(r.error, "No se pudo cargar el expediente.");
@@ -162,6 +170,10 @@ export async function fetchDossier(id: string): Promise<{ dossier: Dossier; prov
     options: (options.data as OptionRow[]).map(toOption),
     payments: (payments.data ?? []).map(toPayment),
     providerPayments: (providerPayments.data ?? []).map(toProviderPayment),
+    clientChoice:
+      choice.data?.accepted_option_id && choice.data.accepted_at
+        ? { optionId: choice.data.accepted_option_id, acceptedAt: choice.data.accepted_at }
+        : null,
     liquidatedAt: row.liquidated_at,
   };
 
