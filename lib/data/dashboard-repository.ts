@@ -3,7 +3,7 @@
  * Todo pasa por la RLS de la sesión.
  */
 
-import type { LiquidatedDossier } from "@/lib/accounting/export";
+import type { LiquidatedDossier, ProviderTransfer } from "@/lib/accounting/export";
 import { getSupabase } from "@/lib/supabase/client";
 import { fail, num } from "./dossier-repository";
 
@@ -93,4 +93,45 @@ export async function fetchLiquidatedDossiers(fromIso: string, toIso: string): P
       })),
     };
   });
+}
+
+/** Giros a proveedores con fecha de pago en [from, to), para sus comprobantes de salida de caja. */
+export async function fetchProviderTransfers(fromIso: string, toIso: string): Promise<ProviderTransfer[]> {
+  const { data, error } = await getSupabase()
+    .from("provider_payments")
+    .select(
+      "id, paid_at, currency, amount_original, amount_cop, reference, booking_reference, " +
+        "travel_dossiers(dossier_code, destination_title), dossier_services(provider_name, exchange_rate, providers_catalog(nit))",
+    )
+    .gte("paid_at", fromIso)
+    .lt("paid_at", toIso)
+    .order("paid_at");
+  if (error) fail(error, "No se pudieron cargar los pagos a proveedores.");
+
+  type Row = {
+    id: string;
+    paid_at: string;
+    currency: "COP" | "USD";
+    amount_original: number;
+    amount_cop: number;
+    reference: string | null;
+    booking_reference: string | null;
+    travel_dossiers: { dossier_code: string; destination_title: string } | null;
+    dossier_services: { provider_name: string; exchange_rate: number; providers_catalog: { nit: string | null } | null } | null;
+  };
+
+  return (data as unknown as Row[]).map((r) => ({
+    id: r.id,
+    dossierCode: r.travel_dossiers?.dossier_code ?? "",
+    dossierTitle: r.travel_dossiers?.destination_title ?? "",
+    paidAt: r.paid_at,
+    providerName: r.dossier_services?.provider_name ?? "",
+    providerNit: r.dossier_services?.providers_catalog?.nit ?? "",
+    currency: r.currency,
+    amountOriginal: num(r.amount_original),
+    quotedRate: r.currency === "COP" ? 1 : num(r.dossier_services?.exchange_rate),
+    amountCop: num(r.amount_cop),
+    reference: r.reference ?? "",
+    bookingReference: r.booking_reference ?? "",
+  }));
 }

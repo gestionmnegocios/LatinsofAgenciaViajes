@@ -103,6 +103,7 @@ export function createDemoDossier(now: number): Dossier {
       },
     ],
     payments: [],
+    providerPayments: [],
     liquidatedAt: null,
   };
 }

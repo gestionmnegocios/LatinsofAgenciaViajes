@@ -7,6 +7,7 @@ import {
   Archive,
   ArrowLeft,
   BadgeCheck,
+  Building2,
   CloudCheck,
   Loader2,
   MessageCircle,
@@ -20,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 
-import { checkLiquidation, computeFinancials } from "@/lib/finance/calculations";
+import { checkLiquidation, computeFinancials, paidToProvider } from "@/lib/finance/calculations";
 import { formatCOP, formatDate, formatDateTime } from "@/lib/finance/format";
 import type { DossierStatus } from "@/lib/finance/types";
 import {
@@ -32,6 +33,7 @@ import {
 import { FinancialThermometer } from "./FinancialThermometer";
 import { MoneyInput } from "./MoneyInput";
 import { PaymentDrawer } from "./PaymentDrawer";
+import { ProviderPaymentsDrawer } from "./ProviderPaymentsDrawer";
 import { buildQuoteMessage, buildWhatsappLink, earliestValidDeadline } from "@/lib/whatsapp";
 import { ServicesTable } from "./ServicesTable";
 
@@ -57,6 +59,9 @@ export function DossierWorkspace({ backHref }: { backHref?: string }) {
   const summary = useFinancialSummary();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [providerDrawerOpen, setProviderDrawerOpen] = useState(false);
+  const [providerError, setProviderError] = useState<string | null>(null);
+  const closeProviderDrawer = useCallback(() => setProviderDrawerOpen(false), []);
   const [liquidationErrors, setLiquidationErrors] = useState<string[]>([]);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
@@ -78,6 +83,13 @@ export function DossierWorkspace({ backHref }: { backHref?: string }) {
 
   const isDraft = dossier.status === "DRAFT";
   const archivedCount = dossier.options.filter((o) => o.isArchived).length;
+  const servicesWithTransfers = new Set(dossier.providerPayments.map((p) => p.serviceId));
+  // Por girar a la TRM cotizada; los servicios marcados como pagados no suman.
+  const providerPending = (option?.services ?? []).reduce((t, s) => {
+    if (s.isProviderPaid) return t;
+    const balance = Math.max(s.netCostOriginal - paidToProvider(s.id, dossier.providerPayments), 0);
+    return t + (s.currency === "COP" ? balance : balance * s.exchangeRate);
+  }, 0);
   const quotedCount = dossier.options.filter((o) => !o.isArchived && o.services.some((s) => s.salePrice > 0)).length;
 
   function sendQuote() {
@@ -228,6 +240,22 @@ export function DossierWorkspace({ backHref }: { backHref?: string }) {
                   Abonos
                   {summary.balanceDue > 0 ? ` · saldo ${formatCOP(summary.balanceDue)}` : " · 100 %"}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProviderError(null);
+                    setProviderDrawerOpen(true);
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition ${
+                    providerPending > 0
+                      ? "bg-sky-100 text-sky-900 hover:bg-sky-200"
+                      : "bg-slate-100 text-slate-800 hover:bg-slate-200"
+                  }`}
+                >
+                  <Building2 className="size-4" aria-hidden />
+                  Proveedores
+                  {providerPending > 0 ? ` · por girar ${formatCOP(providerPending)}` : " · pagados"}
+                </button>
                 {dossier.status !== "LIQUIDATED" && (
                   <button
                     type="button"
@@ -301,6 +329,7 @@ export function DossierWorkspace({ backHref }: { backHref?: string }) {
               onUpdate={(serviceId, patch) => actions.updateService(option.id, serviceId, patch)}
               onRemove={(serviceId) => actions.removeService(option.id, serviceId)}
               onCreateProvider={actions.addCustomProvider}
+              servicesWithTransfers={servicesWithTransfers}
             />
           )}
 
@@ -356,6 +385,29 @@ export function DossierWorkspace({ backHref }: { backHref?: string }) {
           <FinancialThermometer summary={summary} status={dossier.status} optionTitle={option?.title} />
         </div>
       </div>
+
+      {!isDraft && (
+        <ProviderPaymentsDrawer
+          open={providerDrawerOpen}
+          onClose={closeProviderDrawer}
+          dossierCode={dossier.code}
+          services={option?.services ?? []}
+          payments={dossier.providerPayments}
+          readOnly={dossier.status === "LIQUIDATED" || dossier.status === "CANCELLED"}
+          error={providerError}
+          onAdd={async (payment) => {
+            const saved = await actions.addProviderPayment(payment);
+            setProviderError(saved ? null : (useDossierStore.getState().saveError ?? "No se pudo registrar el giro."));
+            return saved;
+          }}
+          onRemove={async (paymentId) => {
+            const before = useDossierStore.getState().dossier?.providerPayments.length ?? 0;
+            await actions.removeProviderPayment(paymentId);
+            const after = useDossierStore.getState().dossier?.providerPayments.length ?? 0;
+            setProviderError(after < before ? null : (useDossierStore.getState().saveError ?? "No se pudo anular el giro."));
+          }}
+        />
+      )}
 
       <PaymentDrawer
         open={drawerOpen}

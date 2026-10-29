@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { ACCOUNTS, bogotaDate, buildAccountingLines, toCsv, type LiquidatedDossier } from "./export.ts";
+import { ACCOUNTS, bogotaDate, buildAccountingLines, buildTransferLines, toCsv, type LiquidatedDossier, type ProviderTransfer } from "./export.ts";
 
 const dossier: LiquidatedDossier = {
   code: "EXP-1049",
@@ -56,4 +56,57 @@ test("margen negativo: sin IVA ni comisión, pérdida al débito de 4155", () =>
 test("bogotaDate usa la hora de Colombia", () => {
   assert.equal(bogotaDate("2026-12-01T04:59:00Z"), "30/11/2026");
   assert.equal(bogotaDate("2026-12-01T05:00:00Z"), "01/12/2026");
+});
+
+const transfer = (overrides: Partial<ProviderTransfer>): ProviderTransfer => ({
+  id: "3f9a2c11-0000-4000-8000-000000000001",
+  dossierCode: "EXP-1049",
+  dossierTitle: "Cancún",
+  paidAt: "2026-10-29T17:00:00Z",
+  providerName: "Ciclo Viajes",
+  providerNit: "900555",
+  currency: "USD",
+  amountOriginal: 500,
+  quotedRate: 4_150,
+  amountCop: 2_105_000,
+  reference: "TRX-1",
+  bookingReference: "PNR-QA1",
+  ...overrides,
+});
+
+test("giro en USD: salda 281505 a la TRM cotizada y lleva la diferencia en cambio", () => {
+  const lines = buildTransferLines([transfer({})]);
+  assert.deepEqual(
+    lines.map((l) => [l.account, l.debit, l.credit]),
+    [
+      [ACCOUNTS.thirdParty.code, 2_075_000, 0],
+      [ACCOUNTS.fxLoss.code, 30_000, 0],
+      [ACCOUNTS.bank.code, 0, 2_105_000],
+    ],
+  );
+  assert.ok(lines.every((l) => l.voucher === "EXP-1049-G3F9A2C" && l.date === "29/10/2026" && l.thirdPartyName === "Ciclo Viajes"));
+  assert.ok(lines[0].description.includes("Loc. PNR-QA1") && lines[0].description.includes("Ref. TRX-1"));
+});
+
+test("giros: TRM menor da ingreso por diferencia en cambio; en COP no hay diferencia; un comprobante por giro", () => {
+  const lines = buildTransferLines([
+    transfer({ id: "bbbbbb00-1", paidAt: "2026-10-30T17:00:00Z", amountOriginal: 300, amountCop: 300 * 4_100 }),
+    transfer({ id: "aaaaaa00-1", currency: "COP", amountOriginal: 1_000_000, quotedRate: 1, amountCop: 1_000_000, paidAt: "2026-10-20T17:00:00Z" }),
+    transfer({ id: "cccccc00-1", dossierCode: "EXP-1050", currency: "COP", amountOriginal: 500_000, quotedRate: 1, amountCop: 500_000 }),
+  ]);
+  const byVoucher = (v: string) => lines.filter((l) => l.voucher === v);
+  assert.equal(lines[0].voucher, "EXP-1049-GAAAAAA", "ordenados por fecha");
+  assert.equal(byVoucher("EXP-1049-GAAAAAA").length, 2, "en COP no hay diferencia en cambio");
+  assert.deepEqual(
+    byVoucher("EXP-1049-GBBBBBB").map((l) => [l.account, l.debit, l.credit]),
+    [
+      [ACCOUNTS.thirdParty.code, 1_245_000, 0],
+      [ACCOUNTS.fxGain.code, 0, 15_000],
+      [ACCOUNTS.bank.code, 0, 1_230_000],
+    ],
+  );
+  assert.equal(byVoucher("EXP-1050-GCCCCCC").length, 2);
+  const debit = lines.reduce((t, l) => t + l.debit, 0);
+  const credit = lines.reduce((t, l) => t + l.credit, 0);
+  assert.equal(debit, credit);
 });

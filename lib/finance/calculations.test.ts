@@ -181,3 +181,42 @@ test("Criterio 4: enlace de WhatsApp sin errores de encoding", () => {
   assert.match(message, /Saldo pendiente: \*\$ 1\.900\.000\*/);
   assert.equal(buildWhatsappLink("hola").startsWith("https://wa.me/?text="), true);
 });
+
+test("giros a proveedores: misma regla de 'pagado' que la base de datos", async () => {
+  const { applyTransferPaidFlags, paidToProvider } = await import("./calculations.ts");
+  const giro = (serviceId: string, amountOriginal: number) => ({
+    id: `p-${serviceId}-${amountOriginal}`,
+    serviceId,
+    currency: "USD" as const,
+    amountOriginal,
+    exchangeRate: 4_200,
+    amountCop: amountOriginal * 4_200,
+    method: "TRANSFER_BANCOLOMBIA" as const,
+    paidAt: "2026-10-29T12:00:00Z",
+    reference: "",
+    bookingReference: "PNR1",
+    notes: "",
+  });
+  const dossier = {
+    options: [
+      {
+        id: "o",
+        title: "Opción 1",
+        isSelected: true,
+        isArchived: false,
+        services: [
+          service({ id: "usd", currency: "USD", exchangeRate: 4_150, netCostOriginal: 800 }),
+          service({ id: "manual", isProviderPaid: true }),
+        ],
+      },
+    ],
+    providerPayments: [giro("usd", 500)],
+  };
+  assert.equal(paidToProvider("usd", dossier.providerPayments), 500);
+  let flagged = applyTransferPaidFlags(dossier).options[0].services;
+  assert.equal(flagged[0].isProviderPaid, false);
+  assert.equal(flagged[1].isProviderPaid, true, "sin giros conserva la marca manual");
+
+  flagged = applyTransferPaidFlags({ ...dossier, providerPayments: [giro("usd", 500), giro("usd", 300)] }).options[0].services;
+  assert.equal(flagged[0].isProviderPaid, true, "800 USD girados en dos pagos cubren el costo");
+});

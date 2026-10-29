@@ -372,6 +372,58 @@ export type Database = {
           },
         ]
       }
+      provider_payments: {
+        Row: {
+          agency_id: string
+          amount_cop: number
+          amount_original: number
+          booking_reference: string | null
+          created_at: string
+          currency: string
+          dossier_id: string
+          exchange_rate: number
+          id: string
+          notes: string | null
+          paid_at: string
+          payment_method: Database["public"]["Enums"]["payment_method"]
+          reference: string | null
+          registered_by: string | null
+          service_id: string
+        }
+        Insert: {
+          agency_id: string
+          amount_original: number
+          booking_reference?: string | null
+          created_at?: string
+          currency: string
+          dossier_id: string
+          exchange_rate?: number
+          id?: string
+          notes?: string | null
+          paid_at?: string
+          payment_method: Database["public"]["Enums"]["payment_method"]
+          reference?: string | null
+          registered_by?: string | null
+          service_id: string
+        }
+        Update: {
+          agency_id?: string
+          amount_original?: number
+          booking_reference?: string | null
+          created_at?: string
+          currency?: string
+          dossier_id?: string
+          exchange_rate?: number
+          id?: string
+          notes?: string | null
+          paid_at?: string
+          payment_method?: Database["public"]["Enums"]["payment_method"]
+          reference?: string | null
+          registered_by?: string | null
+          service_id?: string
+        }
+        Relationships: []
+      }
       providers_catalog: {
         Row: {
           agency_id: string | null

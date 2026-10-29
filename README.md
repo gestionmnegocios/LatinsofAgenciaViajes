@@ -84,11 +84,23 @@ Bucket público `agency-logos` (PNG/JPG/WEBP/SVG, ≤ 2 MB). Solo el ADMIN escri
 y solo en la carpeta `<agency_id>/`. Cada subida usa un nombre nuevo (sin caché
 vieja) y borra los anteriores; `agencies.logo_url` guarda la URL pública.
 
+### Pagos a proveedores (`20261029000000_provider_payments.sql`)
+
+Panel «Proveedores» del expediente activo: giros por servicio de la opción
+aprobada, en la moneda del servicio (USD con la TRM real del giro), con
+comprobante y el localizador del momento. La base de datos impide pagar de más,
+girar en expedientes en cotización o liquidados y borrar servicios con giros, y
+con giros calcula `is_provider_paid` (lo girado cubre el costo neto); el
+autoguardado no puede pisarlo.
+
 ### Exportación contable (`lib/accounting/export.ts`)
 
 Un comprobante cuadrado por expediente liquidado, en pesos enteros, CSV con `;`
 y BOM: 111005 (recaudo) contra 281505 por proveedor, 2408 (IVA), 4155 (base,
-absorbe el redondeo) y 520518 / 233520 (comisión). Ajustar `ACCOUNTS` al plan de
+absorbe el redondeo) y 520518 / 233520 (comisión). Cada giro a proveedor del mes
+genera su propio comprobante (`EXP-1049-G3F9A2C`): débito 281505 a la TRM
+cotizada contra crédito 111005 por la salida real, y la diferencia en cambio a
+530525 (gasto) o 421020 (ingreso). Ajustar `ACCOUNTS` al plan de
 cuentas auxiliar de la agencia en Siigo o Alegra.
 
 Tras cambiar el esquema: aplicar la migración, regenerar

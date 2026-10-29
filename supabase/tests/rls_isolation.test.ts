@@ -656,3 +656,60 @@ describe("Configuración de la agencia y logo", () => {
     });
   });
 });
+
+describe("Pagos a proveedores (giros)", () => {
+  const SOON = "aaaaaaaa-0000-4000-8000-0000000001d1"; // EXP-2001, confirmado
+
+  test("giros por servicio: validan, recalculan 'pagado' y no se pisan con el autoguardado", async () => {
+    const { rows } = await db.query<{ id: string }>(
+      `select id from public.dossier_services where provider_name = 'Mayorplus' and agency_id = $1 and net_cost_original = 2000000`,
+      [A.agency],
+    );
+    const service = rows[0].id;
+    await db.exec(`update public.dossier_services set booking_reference = 'PNR-ZX81' where id = '${service}';`);
+
+    const pay = (amount: number, extra: { currency?: string; dossier?: string; service?: string } = {}) =>
+      db.query<{ id: string; booking_reference: string }>(
+        `insert into public.provider_payments (agency_id, dossier_id, service_id, currency, amount_original, payment_method, reference)
+         values ($1, $2, $3, $4, $5, 'TRANSFER_BANCOLOMBIA', 'TRX-1') returning id, booking_reference`,
+        [A.agency, extra.dossier ?? SOON, extra.service ?? service, extra.currency ?? "COP", amount],
+      );
+    const paidFlag = async () =>
+      (await db.query<{ p: boolean }>(`select is_provider_paid as p from public.dossier_services where id = $1`, [service])).rows[0].p;
+
+    await asUser(A.agent, async () => {
+      await assert.rejects(pay(2_000_001), /supera el saldo/);
+      await assert.rejects(pay(100, { currency: "USD" }), /COP/);
+      // Expediente liquidado: bloqueado.
+      await assert.rejects(pay(100, { dossier: A.dossier, service: A.service }), /liquidado|activos/);
+
+      const first = await pay(1_500_000);
+      assert.equal(first.rows[0].booking_reference, "PNR-ZX81");
+      assert.equal(await paidFlag(), false);
+
+      // El autoguardado con un valor viejo no pisa el estado calculado.
+      await db.query(`update public.dossier_services set is_provider_paid = true where id = $1`, [service]);
+      assert.equal(await paidFlag(), false);
+
+      const second = await pay(500_000);
+      assert.equal(await paidFlag(), true);
+
+      await db.query(`delete from public.provider_payments where id = $1`, [second.rows[0].id]);
+      assert.equal(await paidFlag(), false);
+
+      // Un servicio con giros no se puede borrar.
+      await assert.rejects(db.query(`delete from public.dossier_services where id = $1`, [service]), /foreign key/);
+    });
+
+    await asUser(B.admin, async () => {
+      assert.equal(await count(`select 1 from public.provider_payments`), 0);
+      await assert.rejects(
+        db.query(
+          `insert into public.provider_payments (agency_id, dossier_id, service_id, currency, amount_original, payment_method)
+           values ($1, $2, $3, 'COP', 1, 'CASH')`,
+          [B.agency, SOON, service],
+        ),
+      );
+    });
+  });
+});

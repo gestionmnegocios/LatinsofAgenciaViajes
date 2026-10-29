@@ -91,6 +91,25 @@ export interface QuoteOption {
   isArchived: boolean;
 }
 
+/** Giro a un proveedor: salida de caja ligada a un servicio y su localizador. */
+export interface ProviderPayment {
+  id: string;
+  serviceId: string;
+  /** Moneda del servicio; en USD el giro lleva su propia TRM. */
+  currency: Currency;
+  amountOriginal: number;
+  exchangeRate: number;
+  /** Valor en pesos del giro (amountOriginal × exchangeRate). */
+  amountCop: number;
+  method: PaymentMethod;
+  paidAt: string;
+  /** N.º de transferencia o comprobante. */
+  reference: string;
+  /** Localizador del servicio al momento del giro. */
+  bookingReference: string;
+  notes: string;
+}
+
 export interface ClientPayment {
   id: string;
   amount: number;
@@ -139,6 +158,7 @@ export interface Dossier {
   agent: DossierAgent;
   options: QuoteOption[];
   payments: ClientPayment[];
+  providerPayments: ProviderPayment[];
   liquidatedAt: string | null;
 }
 

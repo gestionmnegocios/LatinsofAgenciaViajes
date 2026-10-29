@@ -7,9 +7,11 @@ import { DossierWorkspace, WorkspaceSkeleton } from "@/components/dossier/Dossie
 import {
   convertQuoteToFile,
   deletePayment,
+  deleteProviderPayment,
   fetchDossier,
   insertPayment,
   insertProvider,
+  insertProviderPayment,
   liquidateDossier,
   syncOptions,
 } from "@/lib/data/dossier-repository";
@@ -21,6 +23,8 @@ const supabasePersistence: DossierPersistence = {
   liquidate: liquidateDossier,
   insertPayment,
   deletePayment,
+  insertProviderPayment,
+  deleteProviderPayment,
   insertProvider,
 };
 

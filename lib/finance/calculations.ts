@@ -21,6 +21,7 @@ import type {
   DossierService,
   DossierStatus,
   FinancialSummary,
+  ProviderPayment,
   QuoteOption,
 } from "./types.ts";
 
@@ -184,4 +185,30 @@ export function deadlineLevel(
   if (deadline <= now) return "expired";
   if (deadline - now <= 24 * 60 * 60 * 1000) return "due-24h";
   return "ok";
+}
+
+// ─── Pagos a proveedores (giros) ─────────────────────────────────────────────
+
+/** Total girado a un servicio, en la moneda del servicio. */
+export function paidToProvider(serviceId: string, payments: readonly Pick<ProviderPayment, "serviceId" | "amountOriginal">[]): number {
+  return round2(payments.filter((p) => p.serviceId === serviceId).reduce((t, p) => t + p.amountOriginal, 0));
+}
+
+/**
+ * Misma regla que la base de datos: un servicio con giros queda "pagado" cuando
+ * lo girado cubre su costo neto; sin giros conserva la marca manual.
+ */
+export function applyTransferPaidFlags<T extends Pick<Dossier, "options" | "providerPayments">>(dossier: T): T {
+  const withTransfers = new Set(dossier.providerPayments.map((p) => p.serviceId));
+  return {
+    ...dossier,
+    options: dossier.options.map((o) => ({
+      ...o,
+      services: o.services.map((s) =>
+        withTransfers.has(s.id)
+          ? { ...s, isProviderPaid: paidToProvider(s.id, dossier.providerPayments) >= s.netCostOriginal }
+          : s,
+      ),
+    })),
+  };
 }

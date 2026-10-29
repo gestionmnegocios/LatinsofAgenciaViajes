@@ -19,6 +19,7 @@ import { useMemo } from "react";
 import { create } from "zustand";
 
 import {
+  applyTransferPaidFlags,
   checkLiquidation,
   computeFinancials,
   defaultExchangeRate,
@@ -31,6 +32,7 @@ import type {
   DossierService,
   FinancialSummary,
   Provider,
+  ProviderPayment,
   QuoteOption,
 } from "@/lib/finance/types";
 
@@ -47,6 +49,8 @@ export interface DossierPersistence {
   liquidate: (dossierId: string) => Promise<string>;
   insertPayment: (dossier: Dossier, payment: Omit<ClientPayment, "id">) => Promise<ClientPayment>;
   deletePayment: (paymentId: string) => Promise<void>;
+  insertProviderPayment: (dossier: Dossier, payment: Omit<ProviderPayment, "id" | "amountCop">) => Promise<ProviderPayment>;
+  deleteProviderPayment: (paymentId: string) => Promise<void>;
   insertProvider: (provider: Provider) => Promise<void>;
 }
 
@@ -112,6 +116,9 @@ interface DossierState {
   convertToFile: (optionId: string) => Promise<ActionResult>;
   addPayment: (payment: Omit<ClientPayment, "id">) => Promise<ClientPayment | null>;
   removePayment: (paymentId: string) => Promise<void>;
+  /** Giro a proveedor; devuelve `null` y deja el error en `saveError` si falla. */
+  addProviderPayment: (payment: Omit<ProviderPayment, "id" | "amountCop">) => Promise<ProviderPayment | null>;
+  removeProviderPayment: (paymentId: string) => Promise<void>;
   liquidate: () => Promise<ActionResult>;
 }
 
@@ -357,6 +364,50 @@ export const useDossierStore = create<DossierState>()((set, get) => {
       }
       const current = get().dossier;
       if (current) set({ dossier: { ...current, payments: current.payments.filter((p) => p.id !== paymentId) } });
+    },
+
+    addProviderPayment: async (input) => {
+      const { dossier, persistence } = get();
+      if (!dossier || (dossier.status !== "CONFIRMED" && dossier.status !== "IN_PROGRESS")) return null;
+      let payment: ProviderPayment;
+      try {
+        payment = persistence
+          ? await persistence.insertProviderPayment(dossier, input)
+          : { ...input, id: newId(), amountCop: Math.round(input.amountOriginal * input.exchangeRate * 100) / 100 };
+      } catch (error) {
+        set({ saveError: errorMessage(error) });
+        return null;
+      }
+      const current = get().dossier;
+      if (current) {
+        set({ dossier: applyTransferPaidFlags({ ...current, providerPayments: [...current.providerPayments, payment] }) });
+      }
+      return payment;
+    },
+
+    removeProviderPayment: async (paymentId) => {
+      const { dossier, persistence } = get();
+      if (!dossier || dossier.status === "LIQUIDATED") return;
+      try {
+        if (persistence) await persistence.deleteProviderPayment(paymentId);
+      } catch (error) {
+        set({ saveError: errorMessage(error) });
+        return;
+      }
+      const current = get().dossier;
+      if (current) {
+        const providerPayments = current.providerPayments.filter((p) => p.id !== paymentId);
+        // Sin giros el servicio vuelve a "sin pagar", igual que en la base de datos.
+        const removed = current.providerPayments.find((p) => p.id === paymentId);
+        const next = applyTransferPaidFlags({ ...current, providerPayments });
+        if (removed && !providerPayments.some((p) => p.serviceId === removed.serviceId)) {
+          next.options = next.options.map((o) => ({
+            ...o,
+            services: o.services.map((s) => (s.id === removed.serviceId ? { ...s, isProviderPaid: false } : s)),
+          }));
+        }
+        set({ dossier: next });
+      }
     },
 
     liquidate: async () => {

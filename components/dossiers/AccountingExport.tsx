@@ -3,8 +3,8 @@
 import { useId, useState } from "react";
 import { Download, Loader2 } from "lucide-react";
 
-import { buildAccountingLines, toCsv } from "@/lib/accounting/export";
-import { fetchLiquidatedDossiers } from "@/lib/data/dashboard-repository";
+import { buildAccountingLines, buildTransferLines, toCsv } from "@/lib/accounting/export";
+import { fetchLiquidatedDossiers, fetchProviderTransfers } from "@/lib/data/dashboard-repository";
 import { useNow } from "@/lib/hooks/use-now";
 
 /** "2026-10" → rango [1 oct, 1 nov) en hora de Colombia (UTC−5, sin horario de verano). */
@@ -19,7 +19,7 @@ function currentMonth(now: number): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-/** FR-5.2 Exporta los expedientes liquidados del mes como CSV para Siigo / Alegra. */
+/** FR-5.2 Exporta los expedientes liquidados y los giros a proveedores del mes como CSV para Siigo / Alegra. */
 export function AccountingExport() {
   const id = useId();
   const now = useNow();
@@ -33,19 +33,26 @@ export function AccountingExport() {
     setBusy(true);
     setMessage(null);
     try {
-      const dossiers = await fetchLiquidatedDossiers(...monthRange(month));
-      if (dossiers.length === 0) {
-        setMessage({ tone: "info", text: "No hay expedientes liquidados en ese mes." });
+      const range = monthRange(month);
+      const [dossiers, transfers] = await Promise.all([fetchLiquidatedDossiers(...range), fetchProviderTransfers(...range)]);
+      if (dossiers.length === 0 && transfers.length === 0) {
+        setMessage({ tone: "info", text: "No hay expedientes liquidados ni giros a proveedores en ese mes." });
         return;
       }
-      const blob = new Blob([toCsv(buildAccountingLines(dossiers))], { type: "text/csv;charset=utf-8" });
+      const lines = [...buildAccountingLines(dossiers), ...buildTransferLines(transfers)];
+      const blob = new Blob([toCsv(lines)], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `contabilidad-${month}.csv`;
       a.click();
       URL.revokeObjectURL(url);
-      setMessage({ tone: "info", text: `${dossiers.length} ${dossiers.length === 1 ? "expediente exportado" : "expedientes exportados"}.` });
+      setMessage({
+        tone: "info",
+        text:
+          `${dossiers.length} ${dossiers.length === 1 ? "expediente liquidado" : "expedientes liquidados"} y ` +
+          `${transfers.length} ${transfers.length === 1 ? "giro" : "giros"} a proveedores exportados.`,
+      });
     } catch (e) {
       setMessage({ tone: "error", text: e instanceof Error ? e.message : "No se pudo exportar." });
     } finally {

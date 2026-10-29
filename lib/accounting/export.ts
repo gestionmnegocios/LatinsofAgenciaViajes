@@ -10,6 +10,12 @@
  *   Débito  520518  Gasto comisiones            Comisión del asesor
  *   Crédito 233520  Comisiones por pagar        Comisión del asesor
  *
+ * Y un comprobante por cada giro a proveedor, fechado el día del giro:
+ *
+ *   Débito  281505  Ingresos para terceros      Costo del servicio a la TRM cotizada (proveedor)
+ *   Crédito 111005  Bancos                      Salida de caja real
+ *   Débito  530525 / Crédito 421020             Diferencia en cambio si la TRM del giro difiere
+ *
  * Las cuentas auxiliares (`ACCOUNTS`) deben coincidir con el plan de cuentas
  * de cada agencia en su software contable.
  */
@@ -21,7 +27,27 @@ export const ACCOUNTS = {
   income: { code: "4155", name: "Ingresos por intermediación" },
   commissionExpense: { code: "520518", name: "Gasto comisiones a comerciales" },
   commissionPayable: { code: "233520", name: "Comisiones por pagar" },
+  fxLoss: { code: "530525", name: "Diferencia en cambio (gasto)" },
+  fxGain: { code: "421020", name: "Diferencia en cambio (ingreso)" },
 } as const;
+
+/** Giro a un proveedor (salida de caja). */
+export interface ProviderTransfer {
+  id: string;
+  dossierCode: string;
+  dossierTitle: string;
+  paidAt: string;
+  providerName: string;
+  providerNit: string;
+  currency: "COP" | "USD";
+  amountOriginal: number;
+  /** TRM con la que se cotizó y causó el servicio (1 en COP). */
+  quotedRate: number;
+  /** Salida de caja en pesos (monto × TRM del giro). */
+  amountCop: number;
+  reference: string;
+  bookingReference: string;
+}
 
 export interface LiquidatedDossier {
   code: string;
@@ -88,6 +114,42 @@ export function buildAccountingLines(dossiers: readonly LiquidatedDossier[]): Ac
       lines.push({ ...base, account: ACCOUNTS.commissionExpense.code, description: desc("Comisión asesor"), thirdPartyId: "", thirdPartyName: d.agentName, debit: commission, credit: 0 });
       lines.push({ ...base, account: ACCOUNTS.commissionPayable.code, description: desc("Comisión asesor por pagar"), thirdPartyId: "", thirdPartyName: d.agentName, debit: 0, credit: commission });
     }
+  }
+  return lines;
+}
+
+/**
+ * Comprobantes de giros: cada uno salda en 281505 lo causado al proveedor y
+ * lleva la diferencia en cambio cuando la TRM real difiere de la cotizada.
+ * El comprobante se identifica con el expediente y el giro (`EXP-1049-G3F9A2C`),
+ * estable entre exportaciones de distintos meses.
+ */
+export function buildTransferLines(transfers: readonly ProviderTransfer[]): AccountingLine[] {
+  const lines: AccountingLine[] = [];
+  const sorted = [...transfers].sort((a, b) => a.paidAt.localeCompare(b.paidAt));
+  for (const t of sorted) {
+    const voucher = `${t.dossierCode}-G${t.id.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+    const base = { voucher, date: bogotaDate(t.paidAt) };
+    const cash = Math.round(t.amountCop);
+    const settled = Math.round(t.amountOriginal * (t.currency === "COP" ? 1 : t.quotedRate));
+    const fx = cash - settled;
+    const detail = [
+      t.currency === "USD" ? `US$ ${t.amountOriginal}` : null,
+      t.bookingReference ? `Loc. ${t.bookingReference}` : null,
+      t.reference ? `Ref. ${t.reference}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    const desc = (label: string) => `${t.dossierCode} ${t.dossierTitle} · ${label}${detail ? ` · ${detail}` : ""}`;
+    const provider = { thirdPartyId: t.providerNit, thirdPartyName: t.providerName };
+
+    lines.push({ ...base, account: ACCOUNTS.thirdParty.code, description: desc(`Giro a ${t.providerName}`), ...provider, debit: settled, credit: 0 });
+    if (fx > 0) {
+      lines.push({ ...base, account: ACCOUNTS.fxLoss.code, description: desc("Diferencia en cambio"), ...provider, debit: fx, credit: 0 });
+    } else if (fx < 0) {
+      lines.push({ ...base, account: ACCOUNTS.fxGain.code, description: desc("Diferencia en cambio"), ...provider, debit: 0, credit: -fx });
+    }
+    lines.push({ ...base, account: ACCOUNTS.bank.code, description: desc("Salida de caja"), ...provider, debit: 0, credit: cash });
   }
   return lines;
 }
