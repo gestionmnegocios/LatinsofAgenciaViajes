@@ -288,6 +288,10 @@ export const useDossierStore = create<DossierState>()((set, get) => {
         defaultPucAccount: "281505",
         paymentDeadlineHours: 48,
         isSystemPreload: false,
+        contactName: null,
+        phone: null,
+        email: null,
+        bankDetails: null,
       };
       set({ providers: [...providers, provider] });
       if (persistence) {

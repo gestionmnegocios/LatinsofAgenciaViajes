@@ -55,6 +55,7 @@ URL y la llave publicable; usa `.env.example` como plantilla.
 | `/expediente?id=…` | Workspace conectado: autoguardado (~0,7 s), confirmar y liquidar vía RPC |
 | `/comisiones` | Corte de comisiones (FR-4.4): por pagar / retenidas / pagadas, agrupadas por asesor; pago en lote y cuenta de cobro imprimible a PDF. El asesor ve solo las suyas |
 | `/equipo` | Asesores: rol, tasa de comisión y activo/inactivo; invitaciones por correo (edición solo ADMIN) |
+| `/proveedores` | Catálogo: 12 precargados (solo lectura) y proveedores propios con NIT, moneda, plazo de pago, contacto y datos bancarios; crear, editar y eliminar (si no se usan) |
 | `/configuracion` | Datos de la agencia (nombre, NIT, dirección, ciudad, teléfono/WhatsApp) y logo; edición solo ADMIN. Salen en recibos y cuentas de cobro |
 | `/demo` | El mismo Workspace con datos en memoria, sin backend |
 

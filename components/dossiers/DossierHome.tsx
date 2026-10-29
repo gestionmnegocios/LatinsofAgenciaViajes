@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { HandCoins, LogOut, Plus, Settings, Users } from "lucide-react";
+import { Building2, HandCoins, LogOut, Plus, Settings, Users } from "lucide-react";
 
 import { useProfile } from "@/components/auth/AuthGate";
 import { listDossiers, type DossierListItem } from "@/lib/data/dossier-repository";
@@ -66,6 +66,12 @@ export function DossierHome() {
             className="inline-flex items-center gap-1 rounded-md px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-100"
           >
             <HandCoins className="size-4" aria-hidden /> Comisiones
+          </Link>
+          <Link
+            href="/proveedores"
+            className="inline-flex items-center gap-1 rounded-md px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-100"
+          >
+            <Building2 className="size-4" aria-hidden /> Proveedores
           </Link>
           <Link
             href="/equipo"

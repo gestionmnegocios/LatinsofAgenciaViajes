@@ -427,39 +427,51 @@ export type Database = {
       providers_catalog: {
         Row: {
           agency_id: string | null
+          bank_details: string | null
           category: Database["public"]["Enums"]["provider_category"]
+          contact_name: string | null
           created_at: string
           default_currency: string
           default_puc_account: string
+          email: string | null
           id: string
           is_system_preload: boolean
           name: string
           nit: string | null
           payment_deadline_hours: number
+          phone: string | null
         }
         Insert: {
           agency_id?: string | null
+          bank_details?: string | null
           category: Database["public"]["Enums"]["provider_category"]
+          contact_name?: string | null
           created_at?: string
           default_currency?: string
           default_puc_account?: string
+          email?: string | null
           id?: string
           is_system_preload?: boolean
           name: string
           nit?: string | null
           payment_deadline_hours?: number
+          phone?: string | null
         }
         Update: {
           agency_id?: string | null
+          bank_details?: string | null
           category?: Database["public"]["Enums"]["provider_category"]
+          contact_name?: string | null
           created_at?: string
           default_currency?: string
           default_puc_account?: string
+          email?: string | null
           id?: string
           is_system_preload?: boolean
           name?: string
           nit?: string | null
           payment_deadline_hours?: number
+          phone?: string | null
         }
         Relationships: [
           {

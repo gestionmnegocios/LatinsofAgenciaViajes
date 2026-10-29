@@ -52,6 +52,12 @@ export interface Provider {
   defaultPucAccount: string;
   paymentDeadlineHours: number;
   isSystemPreload: boolean;
+  /** Ficha de contacto (solo proveedores propios de la agencia). */
+  contactName: string | null;
+  phone: string | null;
+  email: string | null;
+  /** Banco, tipo y número de cuenta para los giros. */
+  bankDetails: string | null;
 }
 
 /**

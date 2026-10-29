@@ -713,3 +713,38 @@ describe("Pagos a proveedores (giros)", () => {
     });
   });
 });
+
+describe("Catálogo de proveedores propios", () => {
+  test("crear con ficha de contacto, editar, aislar y no borrar si está en uso", async () => {
+    const id = await asUser(A.agent, async () => {
+      const { rows } = await db.query<{ id: string }>(
+        `insert into public.providers_catalog (agency_id, name, category, nit, default_currency, payment_deadline_hours,
+                                               contact_name, phone, email, bank_details)
+         values ($1, 'Receptivo Caribe', 'OPERADOR_LOCAL', '901222333', 'COP', 72,
+                 'Sandra', '3005551234', 'reservas@caribe.co', 'Bancolombia ahorros 123-456789-01') returning id`,
+        [A.agency],
+      );
+      await assert.rejects(
+        db.query(`insert into public.providers_catalog (agency_id, name, category) values ($1, '   ', 'HOTEL')`, [A.agency]),
+        /providers_catalog_name_not_blank/,
+      );
+      const r = await db.query(`update public.providers_catalog set phone = '3010000000' where id = $1`, [rows[0].id]);
+      assert.equal(r.affectedRows, 1);
+      return rows[0].id;
+    });
+
+    await asUser(B.admin, async () => {
+      assert.equal(await count(`select 1 from public.providers_catalog where id = $1`, [id]), 0);
+      assert.equal((await db.query(`delete from public.providers_catalog where id = $1`, [id])).affectedRows, 0);
+    });
+
+    await asUser(A.agent, async () => {
+      await db.query(
+        `insert into public.dossier_services (agency_id, quote_option_id, provider_id, provider_name, service_type)
+         values ($1, $2, $3, 'Receptivo Caribe', 'TOUR')`,
+        [A.agency, "aaaaaaaa-0000-4000-8000-0000000001e2", id],
+      );
+      await assert.rejects(db.query(`delete from public.providers_catalog where id = $1`, [id]), /foreign key/);
+    });
+  });
+});

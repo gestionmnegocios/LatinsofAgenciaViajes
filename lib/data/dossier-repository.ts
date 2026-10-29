@@ -102,6 +102,10 @@ export function toProvider(row: ProviderRow): Provider {
     defaultPucAccount: row.default_puc_account,
     paymentDeadlineHours: row.payment_deadline_hours,
     isSystemPreload: row.is_system_preload,
+    contactName: row.contact_name,
+    phone: row.phone,
+    email: row.email,
+    bankDetails: row.bank_details,
   };
 }
 

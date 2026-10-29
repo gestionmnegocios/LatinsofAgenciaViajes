@@ -33,6 +33,10 @@ export const SYSTEM_PROVIDERS: readonly Provider[] = ROWS.map(
     defaultPucAccount: "281505",
     paymentDeadlineHours,
     isSystemPreload: true,
+    contactName: null,
+    phone: null,
+    email: null,
+    bankDetails: null,
   }),
 );
 
